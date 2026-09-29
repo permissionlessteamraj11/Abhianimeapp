@@ -1,0 +1,6 @@
+{
+  "name": "KuroStream - Telegram Anime & Movies Mini App",
+  "description": "Authorized Telegram Mini App for anime and movie streaming with multi-quality playback, dark cinematic UI, admin rights management, and dynamic recommendations.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
