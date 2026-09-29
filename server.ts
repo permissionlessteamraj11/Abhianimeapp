@@ -428,7 +428,7 @@ app.get('/api/search', (req: Request, res: Response) => {
 
 // 6. Temporary Signed Playback Stream Token & Video Stream
 // Strictly no direct public bucket URLs and no download headers
-app.post('/api/stream/playback-token', (req: Request, res: Response) => {
+app.post(['/api/stream/playback-token', '/api/stream/token'], (req: Request, res: Response) => {
   const { contentType, contentId, episodeId, quality = '1080p' } = req.body;
 
   let targetItem: any = null;
@@ -988,11 +988,11 @@ app.delete('/api/admin/hero-banners/:id', requireAdmin, (req: Request, res: Resp
   res.json({ success: true });
 });
 
-app.get('/api/admin/homepage-sections', requireAdmin, (_req: Request, res: Response) => {
+app.get(['/api/admin/homepage-sections', '/api/admin/sections'], requireAdmin, (_req: Request, res: Response) => {
   res.json(homepageSections);
 });
 
-app.post('/api/admin/homepage-sections', requireAdmin, (req: Request, res: Response) => {
+app.post(['/api/admin/homepage-sections', '/api/admin/sections'], requireAdmin, (req: Request, res: Response) => {
   const sec = req.body;
   const idx = homepageSections.findIndex((s) => s.id === sec.id);
   if (idx >= 0) {
