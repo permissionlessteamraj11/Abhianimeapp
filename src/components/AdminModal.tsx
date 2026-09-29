@@ -57,6 +57,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({ onClose, onRefreshCatalo
   const [isLoggedIn, setIsLoggedIn] = useState(api.isAdminLoggedIn());
   const [username, setUsername] = useState('rajpapa');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [loginError, setLoginError] = useState<string | null>(null);
   const [isSubmittingLogin, setIsSubmittingLogin] = useState(false);
 
@@ -130,6 +131,11 @@ export const AdminModal: React.FC<AdminModalProps> = ({ onClose, onRefreshCatalo
         setAppSettings(sttngs);
       } catch (err: any) {
         console.error('Error fetching admin data:', err);
+        if (err.message?.includes('Unauthorized') || err.message?.includes('credentials')) {
+          api.adminLogout();
+          setIsLoggedIn(false);
+          setLoginError('Admin session expired. Please sign in with username and password.');
+        }
       }
     };
     loadAll();
@@ -141,7 +147,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({ onClose, onRefreshCatalo
     try {
       setIsSubmittingLogin(true);
       setLoginError(null);
-      await api.adminLogin(password, username);
+      await api.adminLogin(password.trim(), username.trim());
       setIsLoggedIn(true);
       haptic.notification('success');
     } catch (err: any) {
@@ -313,27 +319,41 @@ export const AdminModal: React.FC<AdminModalProps> = ({ onClose, onRefreshCatalo
                   type="text"
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
-                  className="w-full h-10 px-3 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-100 focus:outline-none focus:border-cyan-500"
+                  placeholder="rajpapa"
+                  autoComplete="username"
+                  className="w-full h-10 px-3 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-100 focus:outline-none focus:border-cyan-500 font-mono"
                 />
               </div>
 
               <div>
                 <label className="block text-[11px] font-semibold text-slate-400 mb-1">Password</label>
-                <input
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Password"
-                  className="w-full h-10 px-3 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-100 focus:outline-none focus:border-cyan-500"
-                />
+                <div className="relative">
+                  <input
+                    type={showPassword ? 'text' : 'password'}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="28@Rajpapa"
+                    autoComplete="current-password"
+                    className="w-full h-10 px-3 pr-10 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-100 focus:outline-none focus:border-cyan-500 font-mono"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white p-1"
+                    title={showPassword ? 'Hide password' : 'Show password'}
+                  >
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
               </div>
 
               <button
                 type="submit"
                 disabled={isSubmittingLogin}
-                className="mt-2 w-full h-11 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 text-white font-semibold text-xs shadow-lg shadow-cyan-500/25 active:scale-95 transition-all"
+                className="mt-2 w-full h-11 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-bold text-xs shadow-lg shadow-cyan-500/25 active:scale-95 transition-all flex items-center justify-center gap-2"
               >
-                {isSubmittingLogin ? 'Verifying...' : 'Sign In to Dashboard'}
+                <Lock className="w-4 h-4" />
+                <span>{isSubmittingLogin ? 'Verifying...' : 'Sign In to Dashboard'}</span>
               </button>
             </form>
           </div>

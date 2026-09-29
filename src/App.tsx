@@ -99,7 +99,19 @@ export default function App() {
       const path = window.location.pathname.toLowerCase();
       const hash = window.location.hash.toLowerCase();
       const search = window.location.search.toLowerCase();
-      if (path === '/raj' || path.startsWith('/raj') || hash.includes('raj') || search.includes('raj')) {
+      if (
+        path === '/raj' ||
+        path.startsWith('/raj') ||
+        path.includes('raj') ||
+        hash.includes('raj') ||
+        search.includes('raj')
+      ) {
+        setShowAdminModal(true);
+      }
+    };
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.altKey && e.key.toLowerCase() === 'a') || (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === 'a')) {
         setShowAdminModal(true);
       }
     };
@@ -107,10 +119,12 @@ export default function App() {
     checkAdminRoute();
     window.addEventListener('popstate', checkAdminRoute);
     window.addEventListener('hashchange', checkAdminRoute);
+    window.addEventListener('keydown', handleKeyDown);
 
     return () => {
       window.removeEventListener('popstate', checkAdminRoute);
       window.removeEventListener('hashchange', checkAdminRoute);
+      window.removeEventListener('keydown', handleKeyDown);
     };
   }, []);
 
@@ -333,6 +347,7 @@ export default function App() {
         {/* Sticky Header */}
         <Header
           onOpenSearch={() => setShowSearchModal(true)}
+          onOpenAdmin={() => setShowAdminModal(true)}
           maintenanceMode={appSettings?.maintenanceMode}
         />
 
@@ -464,6 +479,7 @@ export default function App() {
               onOpenContentPolicy={() => setShowContentPolicyModal(true)}
               onOpenCopyrightClaim={() => setShowCopyrightClaimModal(true)}
               onDeleteMyData={handleDeleteMyData}
+              onOpenAdmin={() => setShowAdminModal(true)}
             />
           </main>
         )}

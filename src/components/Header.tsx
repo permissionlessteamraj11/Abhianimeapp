@@ -5,17 +5,26 @@ import { StarkIcon } from './StarkLogo';
 
 interface HeaderProps {
   onOpenSearch: () => void;
+  onOpenAdmin: () => void;
   maintenanceMode?: boolean;
 }
 
 export const Header: React.FC<HeaderProps> = ({
   onOpenSearch,
+  onOpenAdmin,
   maintenanceMode
 }) => {
   return (
     <header className="sticky top-0 z-30 h-14 w-full bg-slate-950/85 backdrop-blur-xl border-b border-slate-800/80 px-4 flex items-center justify-between">
       {/* Brand Zone: Stark Anime Wordmark & Insignia */}
-      <div className="flex items-center gap-2.5">
+      <div
+        onClick={() => {
+          haptic.impact('light');
+          onOpenAdmin();
+        }}
+        className="flex items-center gap-2.5 cursor-pointer active:scale-98 transition-transform select-none"
+        title="Stark Anime - Tap for Admin Portal (/raj)"
+      >
         <StarkIcon size={34} />
         <div className="flex flex-col">
           <div className="flex items-center gap-1.5">
@@ -27,15 +36,24 @@ export const Header: React.FC<HeaderProps> = ({
                 ANIME
               </span>
             </div>
-            <span className="inline-flex items-center gap-0.5 text-[9px] uppercase tracking-wider font-semibold text-cyan-400/90 bg-cyan-950/60 border border-cyan-500/30 px-1.5 py-0.5 rounded ml-1">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                haptic.impact('medium');
+                onOpenAdmin();
+              }}
+              className="inline-flex items-center gap-0.5 text-[9px] uppercase tracking-wider font-semibold text-cyan-400 bg-cyan-950/80 hover:bg-cyan-900 border border-cyan-500/40 px-1.5 py-0.5 rounded ml-1 transition-colors cursor-pointer"
+              title="Admin Portal (/raj)"
+            >
               <ShieldCheck className="w-2.5 h-2.5" />
               Official
-            </span>
+            </button>
           </div>
         </div>
       </div>
 
-      {/* Action Zone: Search only (Admin hidden behind secret /raj URL) */}
+      {/* Action Zone */}
       <div className="flex items-center gap-2">
         {maintenanceMode && (
           <span className="flex items-center gap-1 text-[10px] text-amber-400 bg-amber-950/70 border border-amber-500/30 px-2 py-1 rounded-md">

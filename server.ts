@@ -165,8 +165,36 @@ users.set(849204812, {
   last_active_at: new Date().toISOString()
 });
 
-// Admin Session store
+// Admin Session store & Token verification
 const activeAdminTokens = new Set<string>();
+
+function createAdminToken(username: string): string {
+  const expiresAt = Date.now() + 30 * 24 * 60 * 60 * 1000; // 30 days
+  const payload = `admin:${username}:${expiresAt}`;
+  const sig = crypto.createHmac('sha256', JWT_SECRET).update(payload).digest('hex');
+  const token = Buffer.from(JSON.stringify({ payload, sig })).toString('base64url');
+  activeAdminTokens.add(token);
+  return token;
+}
+
+function verifyAdminToken(token: string | undefined): boolean {
+  if (!token) return false;
+  if (activeAdminTokens.has(token)) return true;
+  try {
+    const raw = Buffer.from(token, 'base64url').toString('utf-8');
+    const { payload, sig } = JSON.parse(raw);
+    const expectedSig = crypto.createHmac('sha256', JWT_SECRET).update(payload).digest('hex');
+    if (sig !== expectedSig) return false;
+    const parts = payload.split(':');
+    if (parts[0] !== 'admin' || parts[1] !== 'rajpapa') return false;
+    const expiresAt = Number(parts[2]);
+    if (Date.now() > expiresAt) return false;
+    activeAdminTokens.add(token);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 // Helper: Extract current Telegram User ID
 function getCallerTelegramId(req: Request): number {
@@ -207,7 +235,7 @@ function verifySignedToken(tokenString: string): { valid: boolean; quality?: str
 // Admin Auth Middleware
 function requireAdmin(req: Request, res: Response, next: NextFunction) {
   const token = req.headers['x-admin-token'] as string;
-  if (!token || !activeAdminTokens.has(token)) {
+  if (!verifyAdminToken(token)) {
     return res.status(401).json({ message: 'Unauthorized. Admin credentials required.' });
   }
   next();
@@ -716,11 +744,12 @@ app.post('/api/compliance/report', (req: Request, res: Response) => {
 
 app.post('/api/admin/login', (req: Request, res: Response) => {
   const { username, password } = req.body;
+  const cleanUser = String(username || '').trim();
+  const cleanPass = String(password || '').trim();
 
   // Strict Authorized Admin Credentials requested by owner: rajpapa / 28@Rajpapa
-  if (username === 'rajpapa' && password === '28@Rajpapa') {
-    const token = `adm_tok_${crypto.randomBytes(32).toString('hex')}`;
-    activeAdminTokens.add(token);
+  if (cleanUser.toLowerCase() === 'rajpapa' && cleanPass === '28@Rajpapa') {
+    const token = createAdminToken('rajpapa');
 
     logAdminAction('rajpapa', 'LOGIN', 'auth', 'rajpapa', { ip: req.ip }, req.ip);
 
