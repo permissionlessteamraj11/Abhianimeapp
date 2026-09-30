@@ -261,6 +261,13 @@ export interface AppSettings {
   maxHeroBanners: number;
   recommendationsCount: number;
   maintenanceMode: boolean;
+  maintenanceNotice?: string;
+  announcementActive?: boolean;
+  announcementText?: string;
+  announcementType?: 'info' | 'warning' | 'alert' | 'gold';
+  tokenValidityHours?: number;
+  streamWatermarkEnabled?: boolean;
+  antiRipProtection?: boolean;
   copyrightEmail: string;
   supportUrl: string;
   antiPiracyEnforced: boolean;

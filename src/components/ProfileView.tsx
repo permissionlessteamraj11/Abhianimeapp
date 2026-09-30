@@ -29,7 +29,6 @@ interface ProfileViewProps {
   onOpenContentPolicy: () => void;
   onOpenCopyrightClaim: () => void;
   onDeleteMyData: () => void;
-  onOpenAdmin?: () => void;
 }
 
 export const ProfileView: React.FC<ProfileViewProps> = ({
@@ -44,8 +43,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   onOpenTerms,
   onOpenContentPolicy,
   onOpenCopyrightClaim,
-  onDeleteMyData,
-  onOpenAdmin
+  onDeleteMyData
 }) => {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
@@ -180,30 +178,16 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
       {/* Compliance, Privacy & Policies */}
       <div className="mb-6">
         {/* Brand Card with Logo */}
-        <div className="p-3.5 mb-4 rounded-2xl bg-gradient-to-r from-slate-900 via-slate-900 to-slate-950 border border-slate-800 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <StarkLogoBadge size={46} rounded="xl" />
-            <div className="flex flex-col">
-              <div className="flex items-center gap-1.5">
-                <span className="font-['Syne'] font-extrabold text-sm text-white tracking-wide">STARK</span>
-                <span className="font-sans font-black text-xs text-cyan-400 italic tracking-wider">ANIME</span>
-                <span className="text-[9px] bg-cyan-950/70 border border-cyan-500/30 text-cyan-300 font-mono px-1.5 py-0.2 rounded ml-1">v2.4</span>
-              </div>
-              <span className="text-[11px] text-slate-400">Official Telegram Streaming Gateway</span>
+        <div className="p-3.5 mb-4 rounded-2xl bg-gradient-to-r from-slate-900 via-slate-900 to-slate-950 border border-slate-800 flex items-center gap-3">
+          <StarkLogoBadge size={46} rounded="xl" />
+          <div className="flex flex-col">
+            <div className="flex items-center gap-1.5">
+              <span className="font-['Syne'] font-extrabold text-sm text-white tracking-wide">STARK</span>
+              <span className="font-sans font-black text-xs text-cyan-400 italic tracking-wider">ANIME</span>
+              <span className="text-[9px] bg-cyan-950/70 border border-cyan-500/30 text-cyan-300 font-mono px-1.5 py-0.2 rounded ml-1">v2.4</span>
             </div>
+            <span className="text-[11px] text-slate-400">Official Telegram Streaming Gateway</span>
           </div>
-          {onOpenAdmin && (
-            <button
-              onClick={() => {
-                haptic.impact('medium');
-                onOpenAdmin();
-              }}
-              className="px-2.5 py-1.5 rounded-lg bg-cyan-950/60 hover:bg-cyan-900/80 border border-cyan-500/30 text-[11px] font-mono font-bold text-cyan-400 active:scale-95 transition-all"
-              title="Admin Portal"
-            >
-              /raj
-            </button>
-          )}
         </div>
 
         <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">

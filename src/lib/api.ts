@@ -1140,5 +1140,44 @@ export const api = {
       saveOfflineDb(db);
       return db.settings;
     }
+  },
+
+  async adminGetBackup(): Promise<any> {
+    try {
+      const res = await fetch(apiUrl('/api/admin/backup'), { headers: getHeaders() });
+      return await handleResponse(res);
+    } catch {
+      const db = getOfflineDb();
+      return {
+        version: '2.4',
+        exported_at: new Date().toISOString(),
+        animeList: db.anime,
+        movieList: db.movies,
+        heroBanners: db.heroBanners,
+        homepageSections: db.sections,
+        categories: db.categories,
+        appSettings: db.settings
+      };
+    }
+  },
+
+  async adminRestoreBackup(payload: any): Promise<{ success: boolean; message: string }> {
+    try {
+      const res = await fetch(apiUrl('/api/admin/restore'), {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify({ data: payload })
+      });
+      return await handleResponse(res);
+    } catch {
+      const db = getOfflineDb();
+      if (Array.isArray(payload.animeList)) db.anime = payload.animeList;
+      if (Array.isArray(payload.movieList)) db.movies = payload.movieList;
+      if (Array.isArray(payload.heroBanners)) db.heroBanners = payload.heroBanners;
+      if (Array.isArray(payload.homepageSections)) db.sections = payload.homepageSections;
+      if (payload.appSettings) db.settings = { ...db.settings, ...payload.appSettings };
+      saveOfflineDb(db);
+      return { success: true, message: 'Database restored locally.' };
+    }
   }
 };

@@ -347,9 +347,36 @@ export default function App() {
         {/* Sticky Header */}
         <Header
           onOpenSearch={() => setShowSearchModal(true)}
-          onOpenAdmin={() => setShowAdminModal(true)}
           maintenanceMode={appSettings?.maintenanceMode}
         />
+
+        {/* Live Admin Broadcast Announcement Banner */}
+        {appSettings?.announcementActive && appSettings?.announcementText && (
+          <div
+            className={`px-4 py-2 text-xs flex items-center justify-between border-b ${
+              appSettings.announcementType === 'alert'
+                ? 'bg-rose-950/90 border-rose-800 text-rose-200'
+                : appSettings.announcementType === 'warning'
+                ? 'bg-amber-950/90 border-amber-800 text-amber-200'
+                : appSettings.announcementType === 'gold'
+                ? 'bg-yellow-950/90 border-yellow-700 text-amber-200'
+                : 'bg-cyan-950/90 border-cyan-800 text-cyan-200'
+            }`}
+          >
+            <div className="flex items-center gap-2">
+              <span className="shrink-0 text-sm">📢</span>
+              <span className="font-medium line-clamp-1">{appSettings.announcementText}</span>
+            </div>
+          </div>
+        )}
+
+        {/* Maintenance Notice when Active */}
+        {appSettings?.maintenanceMode && (
+          <div className="px-4 py-2 bg-amber-950/95 border-b border-amber-800 text-amber-200 text-xs flex items-center gap-2">
+            <span className="text-sm">⚠️</span>
+            <span className="line-clamp-2">{appSettings.maintenanceNotice || 'Platform maintenance in progress. Video streaming may be temporarily paused.'}</span>
+          </div>
+        )}
 
         {/* TAB 1: HOME */}
         {currentTab === 'home' && (
@@ -479,7 +506,6 @@ export default function App() {
               onOpenContentPolicy={() => setShowContentPolicyModal(true)}
               onOpenCopyrightClaim={() => setShowCopyrightClaimModal(true)}
               onDeleteMyData={handleDeleteMyData}
-              onOpenAdmin={() => setShowAdminModal(true)}
             />
           </main>
         )}

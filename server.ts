@@ -157,6 +157,13 @@ let appSettings = {
   maxHeroBanners: 5,
   recommendationsCount: 9,
   maintenanceMode: false,
+  maintenanceNotice: 'Stark Anime is currently performing scheduled infrastructure maintenance. We will be back online shortly.',
+  announcementActive: false,
+  announcementText: '🔥 New Season Episodes Just Added in 1080p!',
+  announcementType: 'info',
+  tokenValidityHours: 4,
+  streamWatermarkEnabled: true,
+  antiRipProtection: true,
   copyrightEmail: 'compliance@starkanime.app',
   supportUrl: 'https://t.me/StarkAnimeSupport',
   antiPiracyEnforced: true
@@ -1123,6 +1130,48 @@ app.post('/api/admin/settings', requireAdmin, (req: Request, res: Response) => {
   res.json(appSettings);
 });
 
+// Advanced Database Export / Restore
+app.get('/api/admin/backup', requireAdmin, (_req: Request, res: Response) => {
+  res.json({
+    version: '2.4',
+    exported_at: new Date().toISOString(),
+    animeList,
+    movieList,
+    heroBanners,
+    homepageSections,
+    categories,
+    appSettings
+  });
+});
+
+app.post('/api/admin/restore', requireAdmin, (req: Request, res: Response) => {
+  const { data } = req.body;
+  if (!data) return res.status(400).json({ message: 'Invalid backup payload' });
+  if (Array.isArray(data.animeList)) {
+    animeList.length = 0;
+    animeList.push(...data.animeList);
+  }
+  if (Array.isArray(data.movieList)) {
+    movieList.length = 0;
+    movieList.push(...data.movieList);
+  }
+  if (Array.isArray(data.heroBanners)) {
+    heroBanners.length = 0;
+    heroBanners.push(...data.heroBanners);
+  }
+  if (Array.isArray(data.homepageSections)) {
+    homepageSections.length = 0;
+    homepageSections.push(...data.homepageSections);
+  }
+  if (data.appSettings) {
+    appSettings = { ...appSettings, ...data.appSettings };
+  }
+  logAdminAction('admin', 'RESTORE_DATABASE', 'database', 'global', {
+    itemsCount: (data.animeList?.length || 0) + (data.movieList?.length || 0)
+  });
+  res.json({ success: true, message: 'Database restored successfully' });
+});
+
 // =====================================================================
 // FRONTEND VITE INTEGRATION / STATIC SERVE
 // =====================================================================
@@ -1145,6 +1194,19 @@ async function startServer() {
       appType: 'spa'
     });
     app.use(vite.middlewares);
+
+    // Critical SPA fallback in dev: Transforms index.html for all client routes like /raj
+    app.use('*', async (req: Request, res: Response, next: NextFunction) => {
+      const url = req.originalUrl;
+      try {
+        let template = fs.readFileSync(path.resolve(__dirname, 'index.html'), 'utf-8');
+        template = await vite.transformIndexHtml(url, template);
+        res.status(200).set({ 'Content-Type': 'text/html' }).end(template);
+      } catch (e: any) {
+        vite.ssrFixStacktrace(e);
+        next(e);
+      }
+    });
   } else {
     const distPath = path.resolve(__dirname, 'dist');
     if (fs.existsSync(distPath)) {
