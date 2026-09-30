@@ -87,6 +87,12 @@ export const HeroCarousel: React.FC<HeroCarouselProps> = ({
           src={current.image_url}
           alt={current.title}
           referrerPolicy="no-referrer"
+          onError={(e) => {
+            const target = e.currentTarget;
+            if (target.src !== window.location.origin + '/images/hero_cyber_samurai.jpg') {
+              target.src = '/images/hero_cyber_samurai.jpg';
+            }
+          }}
           className="w-full h-full object-cover object-center animate-in fade-in zoom-in-105 duration-700"
         />
         {/* Anti-Slop Measured Scrim Overlay: ensuring 4.5:1 text legibility */}

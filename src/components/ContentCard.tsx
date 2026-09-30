@@ -20,18 +20,27 @@ export const ContentCard: React.FC<ContentCardProps> = ({
 }) => {
   const isMovie = 'runtime_minutes' in item;
   const typeLabel = isMovie ? 'Movie' : 'Series';
+  const [imgError, setImgError] = React.useState(false);
 
   return (
     <div className="group relative flex flex-col cursor-pointer select-none" onClick={() => onSelect(item)}>
       {/* Poster Container */}
       <div className="relative aspect-[3/4] w-full rounded-xl overflow-hidden bg-slate-900 border border-slate-800/80 shadow-md group-hover:border-cyan-500/40 transition-all duration-300">
-        <img
-          src={item.poster_url}
-          alt={item.title}
-          referrerPolicy="no-referrer"
-          loading="lazy"
-          className="w-full h-full object-cover object-center group-hover:scale-105 transition-transform duration-500"
-        />
+        {!imgError && item.poster_url ? (
+          <img
+            src={item.poster_url}
+            alt={item.title}
+            referrerPolicy="no-referrer"
+            loading="lazy"
+            onError={() => setImgError(true)}
+            className="w-full h-full object-cover object-center group-hover:scale-105 transition-transform duration-500"
+          />
+        ) : (
+          <div className="w-full h-full bg-gradient-to-br from-slate-900 via-slate-800 to-slate-950 flex flex-col items-center justify-center p-3 text-center">
+            <img src="/stark-logo.jpg" alt="Stark Anime" className="w-12 h-12 rounded-lg opacity-40 mb-2 object-cover" />
+            <span className="text-[11px] font-bold text-slate-400 line-clamp-2">{item.title}</span>
+          </div>
+        )}
 
         {/* Gradient Overlay for subtle depth */}
         <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/20 to-transparent opacity-80" />

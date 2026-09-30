@@ -1,7 +1,9 @@
-import React from 'react';
+import React, { useState } from 'react';
+import starkAnimeLogoImg from '../assets/images/stark_anime_logo_1790699252710.jpg';
 
-// Exact generated high-fidelity asset matching user's reference image
-export const STARK_ANIME_LOGO_URL = '/src/assets/images/stark_anime_logo_1790699252710.jpg';
+// Bundled asset processed by Vite for production builds + static public fallback
+export const STARK_ANIME_LOGO_URL = starkAnimeLogoImg;
+export const STARK_ANIME_PUBLIC_LOGO = '/stark-logo.jpg';
 
 interface StarkLogoBadgeProps {
   size?: number | 'sm' | 'md' | 'lg' | 'xl';
@@ -26,16 +28,42 @@ export const StarkLogoBadge: React.FC<StarkLogoBadgeProps> = ({
     full: 'rounded-full'
   }[rounded];
 
+  const [hasError, setHasError] = useState(false);
+  const [triedFallback, setTriedFallback] = useState(false);
+  const [currentSrc, setCurrentSrc] = useState<string>(starkAnimeLogoImg);
+
+  const handleError = () => {
+    if (!triedFallback) {
+      setTriedFallback(true);
+      setCurrentSrc(STARK_ANIME_PUBLIC_LOGO);
+    } else {
+      setHasError(true);
+    }
+  };
+
   return (
     <div
       style={{ width: pixelSize, height: pixelSize }}
-      className={`relative overflow-hidden shrink-0 border border-slate-700/80 shadow-lg shadow-black/60 bg-black ${roundClass} ${className}`}
+      className={`relative overflow-hidden shrink-0 border border-slate-700/80 shadow-lg shadow-black/60 bg-black flex items-center justify-center ${roundClass} ${className}`}
     >
-      <img
-        src={STARK_ANIME_LOGO_URL}
-        alt="Stark Anime"
-        className="w-full h-full object-cover object-center select-none pointer-events-none"
-      />
+      {!hasError ? (
+        <img
+          src={currentSrc}
+          alt="Stark Anime"
+          onError={handleError}
+          className="w-full h-full object-cover object-center select-none pointer-events-none"
+        />
+      ) : (
+        /* Resilient Vector Fallback Emblem when network or file is unavailable */
+        <div className="w-full h-full bg-gradient-to-br from-slate-900 via-rose-950 to-slate-950 flex flex-col items-center justify-center p-1 relative">
+          <div className="absolute inset-0 bg-red-600/10 backdrop-blur-[1px]" />
+          <svg viewBox="0 0 40 40" className="w-3/4 h-3/4 text-rose-500 fill-current drop-shadow-[0_0_8px_rgba(244,63,94,0.6)]">
+            <path d="M20 4L34 14V26L20 36L6 26V14L20 4Z" fill="none" stroke="currentColor" strokeWidth="2.5" />
+            <path d="M12 18L20 12L28 18L24 23L20 20L16 23L12 18Z" fill="#e11d48" />
+            <path d="M15 26L20 32L25 26L20 28L15 26Z" fill="#06b6d4" />
+          </svg>
+        </div>
+      )}
     </div>
   );
 };

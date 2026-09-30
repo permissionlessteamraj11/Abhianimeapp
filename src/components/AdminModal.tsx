@@ -314,7 +314,10 @@ export const AdminModal: React.FC<AdminModalProps> = ({ onClose, onRefreshCatalo
 
             <form onSubmit={handleLogin} className="flex flex-col gap-3">
               <div>
-                <label className="block text-[11px] font-semibold text-slate-400 mb-1">Admin Username</label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-[11px] font-semibold text-slate-400">Admin Username</label>
+                  <span className="text-[10px] text-cyan-400 font-mono">Owner: rajpapa</span>
+                </div>
                 <input
                   type="text"
                   value={username}
@@ -326,7 +329,10 @@ export const AdminModal: React.FC<AdminModalProps> = ({ onClose, onRefreshCatalo
               </div>
 
               <div>
-                <label className="block text-[11px] font-semibold text-slate-400 mb-1">Password</label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-[11px] font-semibold text-slate-400">Password</label>
+                  <span className="text-[10px] text-cyan-400 font-mono">Key: 28@Rajpapa</span>
+                </div>
                 <div className="relative">
                   <input
                     type={showPassword ? 'text' : 'password'}
@@ -347,10 +353,24 @@ export const AdminModal: React.FC<AdminModalProps> = ({ onClose, onRefreshCatalo
                 </div>
               </div>
 
+              {/* Quick Fill Button */}
+              <button
+                type="button"
+                onClick={() => {
+                  setUsername('rajpapa');
+                  setPassword('28@Rajpapa');
+                  haptic.selection();
+                }}
+                className="text-[11px] py-1.5 px-3 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700/60 text-cyan-300 flex items-center justify-center gap-1.5 transition-colors"
+              >
+                <span>⚡</span>
+                <span>Auto-Fill Credentials (rajpapa / 28@Rajpapa)</span>
+              </button>
+
               <button
                 type="submit"
                 disabled={isSubmittingLogin}
-                className="mt-2 w-full h-11 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-bold text-xs shadow-lg shadow-cyan-500/25 active:scale-95 transition-all flex items-center justify-center gap-2"
+                className="mt-1 w-full h-11 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-bold text-xs shadow-lg shadow-cyan-500/25 active:scale-95 transition-all flex items-center justify-center gap-2"
               >
                 <Lock className="w-4 h-4" />
                 <span>{isSubmittingLogin ? 'Verifying...' : 'Sign In to Dashboard'}</span>

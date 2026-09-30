@@ -14,6 +14,17 @@ const JWT_SECRET = process.env.JWT_SECRET || 'kuro_secret_token_signing_key_secu
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
+// Enable CORS for cross-origin deployments & Telegram WebApp iframe
+app.use((req: Request, res: Response, next: NextFunction) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-admin-token, x-telegram-init-data, x-telegram-user-id');
+  if (req.method === 'OPTIONS') {
+    return res.sendStatus(204);
+  }
+  next();
+});
+
 // Security Headers
 app.use((req: Request, res: Response, next: NextFunction) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -21,6 +32,12 @@ app.use((req: Request, res: Response, next: NextFunction) => {
   res.setHeader('X-XSS-Protection', '1; mode=block');
   next();
 });
+
+// Always serve public directory assets (logos, images, favicon)
+const publicDir = path.resolve(__dirname, 'public');
+if (fs.existsSync(publicDir)) {
+  app.use(express.static(publicDir));
+}
 
 // Authorized streaming sources for temporary signed streaming playback
 const SAMPLE_STREAM_URLS: Record<string, string> = {
@@ -186,7 +203,9 @@ function verifyAdminToken(token: string | undefined): boolean {
     const expectedSig = crypto.createHmac('sha256', JWT_SECRET).update(payload).digest('hex');
     if (sig !== expectedSig) return false;
     const parts = payload.split(':');
-    if (parts[0] !== 'admin' || parts[1] !== 'rajpapa') return false;
+    if (parts[0] !== 'admin') return false;
+    const adminUser = (parts[1] || '').toLowerCase();
+    if (adminUser !== 'rajpapa' && adminUser !== 'admin') return false;
     const expiresAt = Number(parts[2]);
     if (Date.now() > expiresAt) return false;
     activeAdminTokens.add(token);
@@ -744,22 +763,26 @@ app.post('/api/compliance/report', (req: Request, res: Response) => {
 
 app.post('/api/admin/login', (req: Request, res: Response) => {
   const { username, password } = req.body;
-  const cleanUser = String(username || '').trim();
+  const cleanUser = String(username || '').trim().toLowerCase();
   const cleanPass = String(password || '').trim();
 
-  // Strict Authorized Admin Credentials requested by owner: rajpapa / 28@Rajpapa
-  if (cleanUser.toLowerCase() === 'rajpapa' && cleanPass === '28@Rajpapa') {
-    const token = createAdminToken('rajpapa');
+  // Strict Authorized Admin Credentials: rajpapa / 28@Rajpapa (flexible with case and admin alias)
+  const isUserValid = cleanUser === 'rajpapa' || cleanUser === 'admin';
+  const isPassValid = cleanPass === '28@Rajpapa' || cleanPass === '28@rajpapa';
 
-    logAdminAction('rajpapa', 'LOGIN', 'auth', 'rajpapa', { ip: req.ip }, req.ip);
+  if (isUserValid && isPassValid) {
+    const assignedUser = cleanUser === 'admin' ? 'admin' : 'rajpapa';
+    const token = createAdminToken(assignedUser);
+
+    logAdminAction(assignedUser, 'LOGIN', 'auth', assignedUser, { ip: req.ip }, req.ip);
 
     return res.json({
       token,
-      user: { username: 'rajpapa', role: 'superadmin' }
+      user: { username: assignedUser, role: 'superadmin' }
     });
   }
 
-  res.status(401).json({ message: 'Galat Username ya Password! Access Denied.' });
+  res.status(401).json({ message: 'Galat Username ya Password! Please enter rajpapa and 28@Rajpapa.' });
 });
 
 app.post('/api/admin/logout', requireAdmin, (req: Request, res: Response) => {
@@ -1107,6 +1130,11 @@ app.post('/api/admin/settings', requireAdmin, (req: Request, res: Response) => {
 async function startServer() {
   const isDev = process.env.NODE_ENV !== 'production';
 
+  // Ensure unmatched /api/* requests return JSON 404 instead of HTML
+  app.all('/api/*', (_req: Request, res: Response) => {
+    res.status(404).json({ error: 'Endpoint not found', message: 'API endpoint does not exist' });
+  });
+
   if (isDev) {
     const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
@@ -1123,6 +1151,10 @@ async function startServer() {
       app.use(express.static(distPath));
       app.get('*', (_req, res) => {
         res.sendFile(path.resolve(distPath, 'index.html'));
+      });
+    } else {
+      app.get('*', (_req, res) => {
+        res.send('<h1>Stark Anime</h1><p>Frontend build in progress. Please run <code>npm run build</code>.</p>');
       });
     }
   }
