@@ -84,6 +84,18 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
       setIsLoadingStream(true);
       setStreamError(null);
 
+      // Direct custom stream URL configured in admin
+      if (currentEpisode?.stream_url) {
+        setStreamUrl(currentEpisode.stream_url);
+        setIsLoadingStream(false);
+        return;
+      }
+      if (isMovie && (content as Movie).stream_url) {
+        setStreamUrl((content as Movie).stream_url!);
+        setIsLoadingStream(false);
+        return;
+      }
+
       const res = await api.getPlaybackToken({
         contentType: isMovie ? 'movie' : 'anime',
         contentId: content.id,
@@ -101,7 +113,7 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
     } finally {
       setIsLoadingStream(false);
     }
-  }, [content.id, currentEpisode?.id, currentQuality, isMovie]);
+  }, [content, currentEpisode, currentQuality, isMovie]);
 
   useEffect(() => {
     loadStreamToken();

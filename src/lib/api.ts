@@ -763,6 +763,7 @@ export const api = {
         release_year: movie.release_year || new Date().getFullYear(),
         classification: movie.classification || 'PG-13',
         status: movie.status || 'Completed',
+        stream_url: movie.stream_url || '',
         language: movie.language || 'Japanese',
         available_audio: movie.available_audio || ['Japanese', 'English'],
         available_subtitles: movie.available_subtitles || ['English', 'Hindi'],
@@ -872,7 +873,8 @@ export const api = {
           title: episodeData.title || `Episode ${season.episodes.length + 1}`,
           description: episodeData.description || '',
           duration_seconds: episodeData.duration_seconds || 1440,
-          thumbnail_url: episodeData.thumbnail_url || anime?.poster_url || '/stark-logo.jpg',
+          thumbnail_url: episodeData.thumbnail_url || anime?.backdrop_url || anime?.poster_url || '/images/hero_cyber_samurai.jpg',
+          stream_url: episodeData.stream_url || '',
           distribution_rights_confirmed: true,
           is_published: episodeData.is_published ?? true,
           view_count: 0

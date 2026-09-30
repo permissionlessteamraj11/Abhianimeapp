@@ -35,8 +35,7 @@ import { AdminModal } from './components/AdminModal';
 import {
   ContentPolicyModal,
   PrivacyPolicyModal,
-  TermsModal,
-  CopyrightClaimModal
+  TermsModal
 } from './components/LegalModals';
 import { ToastContainer, ToastMessage } from './components/Toast';
 import { StarkLogoBadge } from './components/StarkLogo';
@@ -78,7 +77,6 @@ export default function App() {
   const [showContentPolicyModal, setShowContentPolicyModal] = useState(false);
   const [showPrivacyPolicyModal, setShowPrivacyPolicyModal] = useState(false);
   const [showTermsModal, setShowTermsModal] = useState(false);
-  const [showCopyrightClaimModal, setShowCopyrightClaimModal] = useState(false);
 
   // Toast Helper
   const showToast = (type: 'success' | 'error' | 'info', message: string) => {
@@ -504,7 +502,6 @@ export default function App() {
               onOpenPrivacyPolicy={() => setShowPrivacyPolicyModal(true)}
               onOpenTerms={() => setShowTermsModal(true)}
               onOpenContentPolicy={() => setShowContentPolicyModal(true)}
-              onOpenCopyrightClaim={() => setShowCopyrightClaimModal(true)}
               onDeleteMyData={handleDeleteMyData}
             />
           </main>
@@ -597,11 +594,6 @@ export default function App() {
       {/* Terms of Service */}
       {showTermsModal && (
         <TermsModal onClose={() => setShowTermsModal(false)} />
-      )}
-
-      {/* DMCA / Copyright Claim Form */}
-      {showCopyrightClaimModal && (
-        <CopyrightClaimModal onClose={() => setShowCopyrightClaimModal(false)} />
       )}
     </div>
   );

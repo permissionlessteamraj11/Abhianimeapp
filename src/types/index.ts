@@ -61,6 +61,7 @@ export interface Episode {
   description: string;
   thumbnail_url: string;
   duration_seconds: number;
+  stream_url?: string;
   release_date?: string;
   distribution_rights_confirmed: boolean;
   rights_confirmed_by?: string;
@@ -123,6 +124,7 @@ export interface Movie {
   release_year: number;
   runtime_minutes: number;
   rating: number;
+  stream_url?: string;
   classification: ContentClassification;
   status: 'Completed' | 'Coming Soon';
   language: string;

@@ -27,7 +27,6 @@ interface ProfileViewProps {
   onOpenPrivacyPolicy: () => void;
   onOpenTerms: () => void;
   onOpenContentPolicy: () => void;
-  onOpenCopyrightClaim: () => void;
   onDeleteMyData: () => void;
 }
 
@@ -42,7 +41,6 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
   onOpenPrivacyPolicy,
   onOpenTerms,
   onOpenContentPolicy,
-  onOpenCopyrightClaim,
   onDeleteMyData
 }) => {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -204,21 +202,7 @@ export const ProfileView: React.FC<ProfileViewProps> = ({
           >
             <div className="flex items-center gap-2.5">
               <Shield className="w-4 h-4 text-cyan-400" />
-              <span>Content Distribution & Anti-Piracy Policy</span>
-            </div>
-            <ExternalLink className="w-3.5 h-3.5 text-slate-500" />
-          </button>
-
-          <button
-            onClick={() => {
-              haptic.selection();
-              onOpenCopyrightClaim();
-            }}
-            className="w-full flex items-center justify-between p-3 rounded-xl bg-slate-900/60 hover:bg-slate-900 border border-slate-800 text-xs font-semibold text-slate-200 transition-colors"
-          >
-            <div className="flex items-center gap-2.5">
-              <FileText className="w-4 h-4 text-amber-400" />
-              <span>DMCA / Copyright Takedown Request</span>
+              <span>Authorized Content Policy</span>
             </div>
             <ExternalLink className="w-3.5 h-3.5 text-slate-500" />
           </button>

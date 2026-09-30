@@ -6,10 +6,11 @@ import {
   HeroBanner,
   HomepageSection,
   Category,
-  CopyrightClaim,
   AdminAuditLog,
   AppSettings,
-  VideoQuality
+  VideoQuality,
+  Season,
+  Episode
 } from '../types';
 import {
   X,
@@ -20,7 +21,6 @@ import {
   Sparkles,
   Sliders,
   Users,
-  ShieldAlert,
   History,
   Settings as SettingsIcon,
   Plus,
@@ -35,7 +35,13 @@ import {
   Upload,
   RefreshCw,
   FolderSync,
-  PlayCircle
+  PlayCircle,
+  Pencil,
+  ChevronDown,
+  ChevronUp,
+  Video,
+  Layers,
+  CheckCircle2
 } from 'lucide-react';
 import { haptic } from '../lib/telegram';
 import { StarkLogoBadge } from './StarkLogo';
@@ -54,7 +60,6 @@ type AdminTab =
   | 'broadcast'
   | 'streaming'
   | 'users'
-  | 'claims'
   | 'database'
   | 'audit'
   | 'settings';
@@ -78,7 +83,6 @@ export const AdminModal: React.FC<AdminModalProps> = ({ onClose, onRefreshCatalo
   const [sections, setSections] = useState<HomepageSection[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [userList, setUserList] = useState<any[]>([]);
-  const [claims, setClaims] = useState<CopyrightClaim[]>([]);
   const [auditLogs, setAuditLogs] = useState<AdminAuditLog[]>([]);
   const [appSettings, setAppSettings] = useState<AppSettings | null>(null);
   const [searchUserQuery, setSearchUserQuery] = useState('');
@@ -89,14 +93,42 @@ export const AdminModal: React.FC<AdminModalProps> = ({ onClose, onRefreshCatalo
   const [editingBanner, setEditingBanner] = useState<Partial<HeroBanner> | null>(null);
   const [editingSection, setEditingSection] = useState<Partial<HomepageSection> | null>(null);
 
-  // Episode creation within anime editor
-  const [selectedSeasonForEp, setSelectedSeasonForEp] = useState<string>('');
-  const [newEpData, setNewEpData] = useState<any>({
+  // Advanced Season & Episode Management State
+  const [expandedAnimeIds, setExpandedAnimeIds] = useState<string[]>([]);
+  const [editingSeason, setEditingSeason] = useState<{ animeId: string; season?: Season } | null>(null);
+  const [seasonFormData, setSeasonFormData] = useState<{
+    title: string;
+    season_number: number;
+    description: string;
+    is_published: boolean;
+  }>({
     title: '',
-    episode_number: 1,
+    season_number: 1,
     description: '',
-    duration_seconds: 1440,
+    is_published: true
+  });
+
+  const [editingEpisode, setEditingEpisode] = useState<{
+    animeId: string;
+    seasonId: string;
+    episode?: Episode;
+  } | null>(null);
+  const [episodeFormData, setEpisodeFormData] = useState<{
+    id?: string;
+    episode_number: number;
+    title: string;
+    description: string;
+    duration_minutes: number;
+    thumbnail_url: string;
+    stream_url: string;
+    is_published: boolean;
+  }>({
+    episode_number: 1,
+    title: '',
+    description: '',
+    duration_minutes: 24,
     thumbnail_url: '',
+    stream_url: '',
     is_published: true
   });
 
@@ -110,7 +142,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({ onClose, onRefreshCatalo
   // Load Dashboard Data when logged in
   const loadAll = async () => {
     try {
-      const [dash, aList, mList, hb, sec, cats, usrs, clms, logs, sttngs] = await Promise.all([
+      const [dash, aList, mList, hb, sec, cats, usrs, logs, sttngs] = await Promise.all([
         api.adminGetDashboard(),
         api.adminGetAnime(),
         api.adminGetMovies(),
@@ -118,7 +150,6 @@ export const AdminModal: React.FC<AdminModalProps> = ({ onClose, onRefreshCatalo
         api.adminGetSections(),
         api.getCategories(),
         api.adminGetUsers(),
-        api.adminGetClaims(),
         api.adminGetAuditLogs(),
         api.adminGetSettings()
       ]);
@@ -129,9 +160,12 @@ export const AdminModal: React.FC<AdminModalProps> = ({ onClose, onRefreshCatalo
       setSections(sec);
       setCategories(cats);
       setUserList(usrs);
-      setClaims(clms);
       setAuditLogs(logs);
       setAppSettings(sttngs);
+      // Auto-expand first anime if none expanded yet
+      if (aList.length > 0 && expandedAnimeIds.length === 0) {
+        setExpandedAnimeIds([aList[0].id]);
+      }
     } catch (err: any) {
       console.error('Error fetching admin data:', err);
       if (err.message?.includes('Unauthorized') || err.message?.includes('credentials')) {
@@ -236,38 +270,143 @@ export const AdminModal: React.FC<AdminModalProps> = ({ onClose, onRefreshCatalo
     }
   };
 
-  // Add Season to Anime
-  const handleAddSeason = async (animeId: string) => {
-    const anime = animeList.find((a) => a.id === animeId);
-    const nextSeasonNum = (anime?.seasons?.length || 0) + 1;
-    await api.adminSaveSeason(animeId, {
-      season_number: nextSeasonNum,
-      title: `Season ${nextSeasonNum}`,
-      is_published: true
-    });
-    const updated = await api.adminGetAnime();
-    setAnimeList(updated);
-    showNotification(`Season ${nextSeasonNum} added.`);
+  // Toggle Anime Expansion for Seasons & Episodes
+  const toggleExpandAnime = (animeId: string) => {
+    setExpandedAnimeIds((prev) =>
+      prev.includes(animeId) ? prev.filter((id) => id !== animeId) : [...prev, animeId]
+    );
   };
 
-  // Add Episode to Season
-  const handleAddEpisode = async (animeId: string, seasonId: string) => {
-    if (!newEpData.title) {
-      showNotification('Please enter episode title.');
-      return;
-    }
-    await api.adminSaveEpisode(animeId, seasonId, newEpData);
-    setNewEpData({
-      title: '',
-      episode_number: (newEpData.episode_number || 1) + 1,
+  // Open Add Season Modal
+  const handleOpenAddSeason = (anime: Anime) => {
+    const nextNum = (anime.seasons?.length || 0) + 1;
+    setEditingSeason({ animeId: anime.id });
+    setSeasonFormData({
+      title: `Season ${nextNum}`,
+      season_number: nextNum,
       description: '',
-      duration_seconds: 1440,
-      thumbnail_url: '',
       is_published: true
     });
-    const updated = await api.adminGetAnime();
-    setAnimeList(updated);
-    showNotification('Episode added successfully.');
+  };
+
+  // Open Edit Season Modal
+  const handleOpenEditSeason = (animeId: string, season: Season) => {
+    setEditingSeason({ animeId, season });
+    setSeasonFormData({
+      title: season.title || `Season ${season.season_number}`,
+      season_number: season.season_number,
+      description: season.description || '',
+      is_published: season.is_published ?? true
+    });
+  };
+
+  // Save Season (Create / Update)
+  const handleSaveSeasonForm = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingSeason) return;
+    try {
+      await api.adminSaveSeason(editingSeason.animeId, {
+        id: editingSeason.season?.id,
+        season_number: Number(seasonFormData.season_number) || 1,
+        title: seasonFormData.title.trim(),
+        description: seasonFormData.description.trim(),
+        is_published: seasonFormData.is_published
+      });
+      const updated = await api.adminGetAnime();
+      setAnimeList(updated);
+      onRefreshCatalog();
+      showNotification(editingSeason.season ? 'Season updated successfully!' : 'New season added successfully!');
+      setEditingSeason(null);
+    } catch (err: any) {
+      showNotification(`Failed to save season: ${err.message}`);
+    }
+  };
+
+  // Delete Season
+  const handleDeleteSeason = async (animeId: string, seasonId: string) => {
+    if (!window.confirm('Are you sure you want to delete this season and all its episodes?')) {
+      return;
+    }
+    try {
+      await api.adminDeleteSeason(animeId, seasonId);
+      const updated = await api.adminGetAnime();
+      setAnimeList(updated);
+      onRefreshCatalog();
+      showNotification('Season deleted.');
+    } catch (err: any) {
+      showNotification(`Failed to delete season: ${err.message}`);
+    }
+  };
+
+  // Open Add Episode Modal
+  const handleOpenAddEpisode = (anime: Anime, season: Season) => {
+    const nextEpNum = (season.episodes?.length || 0) + 1;
+    setEditingEpisode({ animeId: anime.id, seasonId: season.id });
+    setEpisodeFormData({
+      id: '',
+      episode_number: nextEpNum,
+      title: `Episode ${nextEpNum}`,
+      description: '',
+      duration_minutes: 24,
+      thumbnail_url: season.episodes?.[0]?.thumbnail_url || anime.backdrop_url || anime.poster_url || '/images/hero_cyber_samurai.jpg',
+      stream_url: '',
+      is_published: true
+    });
+  };
+
+  // Open Edit Episode Modal
+  const handleOpenEditEpisode = (animeId: string, seasonId: string, ep: Episode) => {
+    setEditingEpisode({ animeId, seasonId, episode: ep });
+    setEpisodeFormData({
+      id: ep.id,
+      episode_number: ep.episode_number,
+      title: ep.title,
+      description: ep.description || '',
+      duration_minutes: Math.round((ep.duration_seconds || 1440) / 60),
+      thumbnail_url: ep.thumbnail_url || '',
+      stream_url: ep.stream_url || '',
+      is_published: ep.is_published ?? true
+    });
+  };
+
+  // Save Episode (Create / Update)
+  const handleSaveEpisodeForm = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingEpisode) return;
+    try {
+      await api.adminSaveEpisode(editingEpisode.animeId, editingEpisode.seasonId, {
+        id: editingEpisode.episode?.id || undefined,
+        episode_number: Number(episodeFormData.episode_number) || 1,
+        title: episodeFormData.title.trim() || `Episode ${episodeFormData.episode_number}`,
+        description: episodeFormData.description.trim(),
+        duration_seconds: (Number(episodeFormData.duration_minutes) || 24) * 60,
+        thumbnail_url: episodeFormData.thumbnail_url.trim() || '/images/hero_cyber_samurai.jpg',
+        stream_url: episodeFormData.stream_url.trim(),
+        is_published: episodeFormData.is_published,
+        distribution_rights_confirmed: true
+      });
+      const updated = await api.adminGetAnime();
+      setAnimeList(updated);
+      onRefreshCatalog();
+      showNotification(editingEpisode.episode ? 'Episode updated successfully!' : 'Episode added successfully!');
+      setEditingEpisode(null);
+    } catch (err: any) {
+      showNotification(`Failed to save episode: ${err.message}`);
+    }
+  };
+
+  // Delete Episode
+  const handleDeleteEpisode = async (animeId: string, seasonId: string, episodeId: string) => {
+    if (!window.confirm('Are you sure you want to delete this episode?')) return;
+    try {
+      await api.adminDeleteEpisode(animeId, seasonId, episodeId);
+      const updated = await api.adminGetAnime();
+      setAnimeList(updated);
+      onRefreshCatalog();
+      showNotification('Episode deleted.');
+    } catch (err: any) {
+      showNotification(`Failed to delete episode: ${err.message}`);
+    }
   };
 
   // Save Hero Banner
@@ -292,14 +431,6 @@ export const AdminModal: React.FC<AdminModalProps> = ({ onClose, onRefreshCatalo
     setSections(updated);
     onRefreshCatalog();
     showNotification('Homepage section updated.');
-  };
-
-  // Update Copyright Claim
-  const handleUpdateClaim = async (claimId: string, status: string, unpublish: boolean) => {
-    await api.adminUpdateClaim(claimId, status, 'Resolved by Administrator via /raj portal', unpublish);
-    const updated = await api.adminGetClaims();
-    setClaims(updated);
-    showNotification('Copyright claim updated.');
   };
 
   // Suspend / Unsuspend user
@@ -414,7 +545,44 @@ export const AdminModal: React.FC<AdminModalProps> = ({ onClose, onRefreshCatalo
         status: 'Ongoing',
         classification: 'PG-13',
         genres: ['Fantasy', 'Adventure', 'Mystery'],
-        categories: ['all', 'anime', 'fantasy']
+        categories: ['all', 'anime', 'fantasy'],
+        seasons: [
+          {
+            id: 's-mac-1',
+            anime_id: 'sample-2',
+            season_number: 1,
+            title: 'Season 1: Celestial Codex',
+            is_published: true,
+            episodes: [
+              {
+                id: 'ep-mac-1',
+                anime_id: 'sample-2',
+                season_id: 's-mac-1',
+                episode_number: 1,
+                title: 'The Forbidden Grimoire',
+                description: 'A dark grimoire surfaces in the archives of Grand Spire.',
+                thumbnail_url: '/images/hero_mystic_alchemy.jpg',
+                duration_seconds: 1440,
+                distribution_rights_confirmed: true,
+                is_published: true,
+                view_count: 512
+              },
+              {
+                id: 'ep-mac-2',
+                anime_id: 'sample-2',
+                season_id: 's-mac-1',
+                episode_number: 2,
+                title: 'Transmutation of Blood',
+                description: 'The alchemists face the inquisitor legions at midnight.',
+                thumbnail_url: '/images/hero_mystic_alchemy.jpg',
+                duration_seconds: 1500,
+                distribution_rights_confirmed: true,
+                is_published: true,
+                view_count: 420
+              }
+            ]
+          }
+        ]
       });
 
       // Sample 3: Stellar Odyssey
@@ -429,7 +597,44 @@ export const AdminModal: React.FC<AdminModalProps> = ({ onClose, onRefreshCatalo
         status: 'Ongoing',
         classification: 'TV-14',
         genres: ['Sci-Fi', 'Adventure'],
-        categories: ['all', 'anime', 'scifi']
+        categories: ['all', 'anime', 'scifi'],
+        seasons: [
+          {
+            id: 's-so-1',
+            anime_id: 'sample-3',
+            season_number: 1,
+            title: 'Season 1: Deep Horizon',
+            is_published: true,
+            episodes: [
+              {
+                id: 'ep-so-1',
+                anime_id: 'sample-3',
+                season_id: 's-so-1',
+                episode_number: 1,
+                title: 'Beyond the Kuiper Belt',
+                description: 'The crew discovers an ancient hyper-spatial transmitter.',
+                thumbnail_url: '/images/poster_stellar_odyssey.jpg',
+                duration_seconds: 1420,
+                distribution_rights_confirmed: true,
+                is_published: true,
+                view_count: 670
+              },
+              {
+                id: 'ep-so-2',
+                anime_id: 'sample-3',
+                season_id: 's-so-1',
+                episode_number: 2,
+                title: 'The Silent Singularity',
+                description: 'Trapped inside the accretion disk of a dying neutron star.',
+                thumbnail_url: '/images/poster_stellar_odyssey.jpg',
+                duration_seconds: 1480,
+                distribution_rights_confirmed: true,
+                is_published: true,
+                view_count: 590
+              }
+            ]
+          }
+        ]
       });
 
       // Sample 4: Chrono Blade Movie
@@ -719,16 +924,6 @@ export const AdminModal: React.FC<AdminModalProps> = ({ onClose, onRefreshCatalo
               </button>
 
               <button
-                onClick={() => setCurrentTab('claims')}
-                className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition-colors ${
-                  currentTab === 'claims' ? 'bg-cyan-500/20 text-cyan-300' : 'text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                <ShieldAlert className="w-4 h-4 text-amber-400" />
-                <span>DMCA ({claims.length})</span>
-              </button>
-
-              <button
                 onClick={() => setCurrentTab('audit')}
                 className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition-colors ${
                   currentTab === 'audit' ? 'bg-cyan-500/20 text-cyan-300' : 'text-slate-400 hover:text-slate-200'
@@ -802,8 +997,13 @@ export const AdminModal: React.FC<AdminModalProps> = ({ onClose, onRefreshCatalo
                     </div>
 
                     <div className="p-4 rounded-xl bg-slate-900/70 border border-slate-800/80">
-                      <span className="text-[11px] font-semibold text-slate-400 block mb-1">DMCA Inquiries</span>
-                      <span className="font-['Syne'] font-bold text-2xl text-amber-400">{claims.length}</span>
+                      <span className="text-[11px] font-semibold text-slate-400 block mb-1">Total Episodes</span>
+                      <span className="font-['Syne'] font-bold text-2xl text-amber-400">
+                        {animeList.reduce(
+                          (acc, a) => acc + (a.seasons?.reduce((sAcc, s) => sAcc + (s.episodes?.length || 0), 0) || 0),
+                          0
+                        )}
+                      </span>
                     </div>
                   </div>
 
@@ -1013,111 +1213,287 @@ export const AdminModal: React.FC<AdminModalProps> = ({ onClose, onRefreshCatalo
                     </form>
                   )}
 
-                  {/* Anime List Grid */}
-                  <div className="grid grid-cols-1 gap-3">
-                    {animeList.map((anime) => (
-                      <div key={anime.id} className="p-3 rounded-2xl bg-slate-900 border border-slate-800 flex flex-col gap-3">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-3">
-                            <img src={anime.poster_url} alt={anime.title} className="w-12 h-16 object-cover rounded-xl border border-slate-800" />
-                            <div>
-                              <h3 className="font-bold text-sm text-white">{anime.title}</h3>
-                              <div className="flex items-center gap-2 text-[11px] text-slate-400">
-                                <span>{anime.release_year}</span>
-                                <span>·</span>
-                                <span>{anime.classification}</span>
-                                <span>·</span>
-                                <span className="text-amber-400 font-bold">{anime.rating}★</span>
-                                <span>·</span>
-                                <span>{anime.seasons?.length || 0} Seasons</span>
+                  {/* Anime List Grid with Expandable Seasons & Episodes */}
+                  <div className="grid grid-cols-1 gap-4">
+                    {animeList.length === 0 ? (
+                      <div className="p-8 text-center bg-slate-900/40 rounded-2xl border border-slate-800 text-xs text-slate-400">
+                        No anime series in catalog yet. Click "+ Add Anime" to create one or load the sample catalog in Overview.
+                      </div>
+                    ) : (
+                      animeList.map((anime) => {
+                        const isExpanded = expandedAnimeIds.includes(anime.id);
+                        const totalEps = anime.seasons?.reduce((sum, s) => sum + (s.episodes?.length || 0), 0) || 0;
+
+                        return (
+                          <div
+                            key={anime.id}
+                            className="rounded-2xl bg-slate-900 border border-slate-800 overflow-hidden shadow-sm"
+                          >
+                            {/* Anime Series Header Card */}
+                            <div className="p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-gradient-to-r from-slate-900 via-slate-900 to-slate-950">
+                              <div className="flex items-center gap-3 min-w-0">
+                                <img
+                                  src={anime.poster_url}
+                                  alt={anime.title}
+                                  className="w-12 h-16 object-cover rounded-xl border border-slate-800 shrink-0 bg-slate-800"
+                                  onError={(e) => {
+                                    (e.currentTarget as HTMLImageElement).src = '/stark-logo.jpg';
+                                  }}
+                                />
+                                <div className="min-w-0">
+                                  <h3 className="font-bold text-sm text-white truncate">{anime.title}</h3>
+                                  <div className="flex items-center gap-2 text-[11px] text-slate-400 mt-0.5 flex-wrap">
+                                    <span>{anime.release_year || 2026}</span>
+                                    <span>·</span>
+                                    <span className="font-mono text-cyan-400 bg-cyan-950/80 px-1 py-0.2 rounded border border-cyan-800/40">
+                                      {anime.classification || 'PG-13'}
+                                    </span>
+                                    <span>·</span>
+                                    <span className="text-amber-400 font-bold">{anime.rating?.toFixed(1) || '8.5'}★</span>
+                                    <span>·</span>
+                                    <span className="text-slate-300 font-medium">{anime.seasons?.length || 0} Seasons</span>
+                                    <span>·</span>
+                                    <span className="text-cyan-300 font-mono">{totalEps} Episodes</span>
+                                  </div>
+                                </div>
+                              </div>
+
+                              <div className="flex items-center gap-1.5 flex-wrap sm:flex-nowrap shrink-0">
+                                <button
+                                  type="button"
+                                  onClick={() => toggleExpandAnime(anime.id)}
+                                  className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 border transition-all ${
+                                    isExpanded
+                                      ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40'
+                                      : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700'
+                                  }`}
+                                  title="Toggle Seasons & Episodes Inspector"
+                                >
+                                  <Layers className="w-3.5 h-3.5 text-cyan-400" />
+                                  <span>Seasons ({anime.seasons?.length || 0})</span>
+                                  {isExpanded ? <ChevronUp className="w-3.5 h-3.5 ml-0.5" /> : <ChevronDown className="w-3.5 h-3.5 ml-0.5" />}
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenAddSeason(anime)}
+                                  className="px-2.5 py-1.5 rounded-xl bg-cyan-950 hover:bg-cyan-900 border border-cyan-700/60 text-cyan-300 text-xs font-semibold flex items-center gap-1"
+                                  title="Add Season"
+                                >
+                                  <Plus className="w-3.5 h-3.5" />
+                                  <span>Add Season</span>
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() => setEditingAnime(anime)}
+                                  className="px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-xs font-semibold flex items-center gap-1"
+                                  title="Edit Series Info"
+                                >
+                                  <Pencil className="w-3.5 h-3.5" />
+                                  <span>Edit</span>
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteAnime(anime.id)}
+                                  className="w-8 h-8 rounded-xl bg-rose-950/60 hover:bg-rose-900 border border-rose-800 flex items-center justify-center text-rose-400"
+                                  title="Delete Anime Series"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
                               </div>
                             </div>
-                          </div>
 
-                          <div className="flex items-center gap-2">
-                            <button
-                              onClick={() => handleAddSeason(anime.id)}
-                              className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-cyan-400 text-xs font-semibold flex items-center gap-1"
-                            >
-                              <Plus className="w-3.5 h-3.5" />
-                              <span>Season</span>
-                            </button>
-                            <button
-                              onClick={() => setEditingAnime(anime)}
-                              className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-white text-xs font-semibold"
-                            >
-                              Edit
-                            </button>
-                            <button
-                              onClick={() => handleDeleteAnime(anime.id)}
-                              className="w-8 h-8 rounded-lg bg-rose-950/60 hover:bg-rose-900 border border-rose-800 flex items-center justify-center text-rose-400"
-                              title="Delete Anime"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        </div>
-
-                        {/* Seasons & Episodes Inspector */}
-                        {anime.seasons && anime.seasons.length > 0 && (
-                          <div className="pl-4 border-l-2 border-cyan-500/30 flex flex-col gap-2">
-                            {anime.seasons.map((season) => (
-                              <div key={season.id} className="p-2.5 rounded-xl bg-slate-950/60 border border-slate-800/80 flex flex-col gap-2">
+                            {/* Expanded Seasons & Episodes Sub-View */}
+                            {isExpanded && (
+                              <div className="p-4 bg-slate-950/80 border-t border-slate-800/80 flex flex-col gap-4">
                                 <div className="flex items-center justify-between">
-                                  <span className="font-bold text-xs text-slate-200">
-                                    {season.title} ({season.episodes?.length || 0} Episodes)
-                                  </span>
+                                  <div className="flex items-center gap-2">
+                                    <Tv className="w-4 h-4 text-cyan-400" />
+                                    <h4 className="font-bold text-xs uppercase tracking-wider text-slate-300">
+                                      Seasons & Episodes for {anime.title}
+                                    </h4>
+                                  </div>
                                   <button
-                                    onClick={() => setSelectedSeasonForEp(season.id)}
-                                    className="px-2 py-1 rounded bg-cyan-950 hover:bg-cyan-900 border border-cyan-700/50 text-[10px] text-cyan-300 font-bold flex items-center gap-1"
+                                    type="button"
+                                    onClick={() => handleOpenAddSeason(anime)}
+                                    className="px-3 py-1 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-[11px] font-bold flex items-center gap-1"
                                   >
                                     <Plus className="w-3 h-3" />
-                                    <span>Add Episode</span>
+                                    <span>New Season</span>
                                   </button>
                                 </div>
 
-                                {selectedSeasonForEp === season.id && (
-                                  <div className="p-2.5 rounded-lg bg-slate-900 border border-slate-700 flex flex-col gap-2">
-                                    <div className="grid grid-cols-2 gap-2">
-                                      <input
-                                        type="text"
-                                        placeholder="Episode Title"
-                                        value={newEpData.title}
-                                        onChange={(e) => setNewEpData({ ...newEpData, title: e.target.value })}
-                                        className="h-8 px-2 bg-slate-950 border border-slate-800 rounded text-xs text-white"
-                                      />
-                                      <input
-                                        type="number"
-                                        placeholder="Duration (sec)"
-                                        value={newEpData.duration_seconds}
-                                        onChange={(e) => setNewEpData({ ...newEpData, duration_seconds: Number(e.target.value) })}
-                                        className="h-8 px-2 bg-slate-950 border border-slate-800 rounded text-xs text-white"
-                                      />
-                                    </div>
-                                    <div className="flex items-center gap-2">
-                                      <button
-                                        type="button"
-                                        onClick={() => handleAddEpisode(anime.id, season.id)}
-                                        className="px-3 py-1 bg-cyan-500 text-slate-950 font-bold text-xs rounded"
-                                      >
-                                        Save Episode
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => setSelectedSeasonForEp('')}
-                                        className="px-3 py-1 bg-slate-800 text-slate-300 text-xs rounded"
-                                      >
-                                        Cancel
-                                      </button>
-                                    </div>
+                                {!anime.seasons || anime.seasons.length === 0 ? (
+                                  <div className="p-6 rounded-xl bg-slate-900/60 border border-slate-800 text-center flex flex-col items-center gap-2">
+                                    <Tv className="w-8 h-8 text-slate-600" />
+                                    <span className="text-xs text-slate-300 font-bold">No seasons created yet</span>
+                                    <p className="text-[11px] text-slate-500">
+                                      Add Season 1 to start uploading video episodes.
+                                    </p>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleOpenAddSeason(anime)}
+                                      className="mt-1 px-3 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold"
+                                    >
+                                      + Create Season 1
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <div className="flex flex-col gap-3">
+                                    {anime.seasons.map((season) => {
+                                      const epList = season.episodes || [];
+
+                                      return (
+                                        <div
+                                          key={season.id}
+                                          className="rounded-xl bg-slate-900 border border-slate-800/90 overflow-hidden"
+                                        >
+                                          {/* Season Header Bar */}
+                                          <div className="p-3 bg-slate-800/40 border-b border-slate-800/80 flex items-center justify-between flex-wrap gap-2">
+                                            <div className="flex items-center gap-2">
+                                              <span className="text-xs font-mono font-bold text-cyan-400 bg-cyan-950 px-2 py-0.5 rounded border border-cyan-800/50">
+                                                S{season.season_number}
+                                              </span>
+                                              <span className="font-bold text-xs text-white">
+                                                {season.title || `Season ${season.season_number}`}
+                                              </span>
+                                              <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 font-mono">
+                                                {epList.length} {epList.length === 1 ? 'Episode' : 'Episodes'}
+                                              </span>
+                                            </div>
+
+                                            <div className="flex items-center gap-1.5">
+                                              <button
+                                                type="button"
+                                                onClick={() => handleOpenAddEpisode(anime, season)}
+                                                className="px-2.5 py-1 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white text-[11px] font-bold flex items-center gap-1 shadow-sm"
+                                              >
+                                                <Plus className="w-3 h-3" />
+                                                <span>Add Episode</span>
+                                              </button>
+
+                                              <button
+                                                type="button"
+                                                onClick={() => handleOpenEditSeason(anime.id, season)}
+                                                className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11px] font-semibold flex items-center gap-1"
+                                                title="Edit Season Title & Number"
+                                              >
+                                                <Pencil className="w-3 h-3" />
+                                                <span>Edit</span>
+                                              </button>
+
+                                              <button
+                                                type="button"
+                                                onClick={() => handleDeleteSeason(anime.id, season.id)}
+                                                className="w-7 h-7 rounded-lg bg-rose-950/60 hover:bg-rose-900 text-rose-400 flex items-center justify-center border border-rose-800"
+                                                title="Delete Season & Episodes"
+                                              >
+                                                <Trash2 className="w-3 h-3" />
+                                              </button>
+                                            </div>
+                                          </div>
+
+                                          {/* Episodes Inside Season */}
+                                          <div className="p-3 flex flex-col gap-2">
+                                            {epList.length === 0 ? (
+                                              <div className="py-4 px-3 text-center bg-slate-950/40 rounded-lg border border-slate-800/50 text-[11px] text-slate-400 flex items-center justify-between">
+                                                <span>No episodes yet in this season.</span>
+                                                <button
+                                                  type="button"
+                                                  onClick={() => handleOpenAddEpisode(anime, season)}
+                                                  className="text-cyan-400 font-bold hover:underline"
+                                                >
+                                                  + Add Episode 1
+                                                </button>
+                                              </div>
+                                            ) : (
+                                              epList.map((ep) => (
+                                                <div
+                                                  key={ep.id}
+                                                  className="p-2.5 rounded-xl bg-slate-950/70 border border-slate-800/80 flex items-center justify-between gap-3 hover:border-slate-700 transition-colors"
+                                                >
+                                                  <div className="flex items-center gap-3 min-w-0">
+                                                    {/* Episode Thumbnail */}
+                                                    <div className="relative w-20 aspect-video rounded-lg overflow-hidden bg-slate-800 shrink-0 border border-slate-800">
+                                                      <img
+                                                        src={ep.thumbnail_url || anime.backdrop_url || anime.poster_url}
+                                                        alt={ep.title}
+                                                        className="w-full h-full object-cover"
+                                                        onError={(e) => {
+                                                          (e.currentTarget as HTMLImageElement).src = '/images/hero_cyber_samurai.jpg';
+                                                        }}
+                                                      />
+                                                      <span className="absolute bottom-0.5 right-0.5 px-1 py-0.2 rounded bg-black/80 text-[9px] font-mono text-slate-200">
+                                                        {Math.round(ep.duration_seconds / 60)}m
+                                                      </span>
+                                                    </div>
+
+                                                    <div className="min-w-0">
+                                                      <div className="flex items-center gap-1.5">
+                                                        <span className="text-[10px] font-mono font-bold text-cyan-400 bg-cyan-950/90 px-1 py-0.5 rounded border border-cyan-800/40 shrink-0">
+                                                          EP {ep.episode_number}
+                                                        </span>
+                                                        <span className="font-bold text-xs text-white truncate">
+                                                          {ep.title}
+                                                        </span>
+                                                      </div>
+
+                                                      <div className="flex items-center gap-2 text-[10px] text-slate-400 mt-1 flex-wrap">
+                                                        {ep.stream_url ? (
+                                                          <span className="text-emerald-400 font-mono flex items-center gap-1 bg-emerald-950/50 px-1.5 py-0.2 rounded border border-emerald-800/40 truncate max-w-[200px]">
+                                                            <Video className="w-2.5 h-2.5 shrink-0" />
+                                                            <span className="truncate">{ep.stream_url}</span>
+                                                          </span>
+                                                        ) : (
+                                                          <span className="text-slate-400 bg-slate-900 px-1.5 py-0.2 rounded border border-slate-800">
+                                                            Adaptive Stream Token
+                                                          </span>
+                                                        )}
+
+                                                        <span className={ep.is_published ? 'text-cyan-400' : 'text-amber-400'}>
+                                                          {ep.is_published ? '• Published' : '• Draft'}
+                                                        </span>
+                                                      </div>
+                                                    </div>
+                                                  </div>
+
+                                                  <div className="flex items-center gap-1.5 shrink-0">
+                                                    <button
+                                                      type="button"
+                                                      onClick={() => handleOpenEditEpisode(anime.id, season.id, ep)}
+                                                      className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11px] font-semibold flex items-center gap-1"
+                                                      title="Edit Episode"
+                                                    >
+                                                      <Pencil className="w-3 h-3" />
+                                                      <span>Edit</span>
+                                                    </button>
+
+                                                    <button
+                                                      type="button"
+                                                      onClick={() => handleDeleteEpisode(anime.id, season.id, ep.id)}
+                                                      className="w-7 h-7 rounded-lg bg-rose-950/60 hover:bg-rose-900 text-rose-400 flex items-center justify-center border border-rose-800"
+                                                      title="Delete Episode"
+                                                    >
+                                                      <Trash2 className="w-3 h-3" />
+                                                    </button>
+                                                  </div>
+                                                </div>
+                                              ))
+                                            )}
+                                          </div>
+                                        </div>
+                                      );
+                                    })}
                                   </div>
                                 )}
                               </div>
-                            ))}
+                            )}
                           </div>
-                        )}
-                      </div>
-                    ))}
+                        );
+                      })
+                    )}
                   </div>
                 </div>
               )}
@@ -1208,6 +1584,29 @@ export const AdminModal: React.FC<AdminModalProps> = ({ onClose, onRefreshCatalo
                             className="w-full h-9 px-3 bg-slate-950 border border-slate-800 rounded-lg text-xs text-white"
                           />
                         </div>
+
+                        <div>
+                          <label className="block text-[11px] font-semibold text-slate-400 mb-1">Backdrop URL</label>
+                          <input
+                            type="text"
+                            value={editingMovie.backdrop_url || ''}
+                            onChange={(e) => setEditingMovie({ ...editingMovie, backdrop_url: e.target.value })}
+                            className="w-full h-9 px-3 bg-slate-950 border border-slate-800 rounded-lg text-xs text-white"
+                          />
+                        </div>
+
+                        <div className="sm:col-span-2">
+                          <label className="block text-[11px] font-semibold text-slate-400 mb-1">
+                            Video Stream URL (MP4 / HLS m3u8)
+                          </label>
+                          <input
+                            type="text"
+                            placeholder="https://commondatastorage.googleapis.com/.../movie.mp4"
+                            value={editingMovie.stream_url || ''}
+                            onChange={(e) => setEditingMovie({ ...editingMovie, stream_url: e.target.value })}
+                            className="w-full h-9 px-3 bg-slate-950 border border-slate-800 rounded-lg text-xs text-white font-mono"
+                          />
+                        </div>
                       </div>
 
                       <div className="flex items-center gap-3">
@@ -1224,21 +1623,30 @@ export const AdminModal: React.FC<AdminModalProps> = ({ onClose, onRefreshCatalo
                   <div className="grid grid-cols-1 gap-3">
                     {movieList.map((m) => (
                       <div key={m.id} className="p-3 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          <img src={m.poster_url} alt={m.title} className="w-12 h-16 object-cover rounded-xl border border-slate-800" />
-                          <div>
-                            <h3 className="font-bold text-sm text-white">{m.title}</h3>
-                            <div className="flex items-center gap-2 text-[11px] text-slate-400">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <img src={m.poster_url} alt={m.title} className="w-12 h-16 object-cover rounded-xl border border-slate-800 shrink-0" />
+                          <div className="min-w-0">
+                            <h3 className="font-bold text-sm text-white truncate">{m.title}</h3>
+                            <div className="flex items-center gap-2 text-[11px] text-slate-400 flex-wrap">
                               <span>{m.release_year}</span>
                               <span>·</span>
                               <span>{m.runtime_minutes} mins</span>
                               <span>·</span>
                               <span className="text-amber-400 font-bold">{m.rating}★</span>
+                              {m.stream_url ? (
+                                <span className="text-[10px] text-emerald-400 font-mono bg-emerald-950 px-1.5 py-0.2 rounded border border-emerald-800">
+                                  Stream Configured
+                                </span>
+                              ) : (
+                                <span className="text-[10px] text-slate-400 bg-slate-950 px-1.5 py-0.2 rounded border border-slate-800">
+                                  Signed Demo Stream
+                                </span>
+                              )}
                             </div>
                           </div>
                         </div>
 
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 shrink-0">
                           <button onClick={() => setEditingMovie(m)} className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-white text-xs font-semibold">
                             Edit
                           </button>
@@ -1602,53 +2010,6 @@ export const AdminModal: React.FC<AdminModalProps> = ({ onClose, onRefreshCatalo
               )}
 
               {/* =====================================================================
-                  TAB: DMCA / COPYRIGHT CLAIMS
-                  ===================================================================== */}
-              {currentTab === 'claims' && (
-                <div>
-                  <h2 className="font-['Syne'] font-bold text-lg text-white mb-2">Copyright Claims & Takedowns</h2>
-                  <p className="text-xs text-slate-400 mb-4">
-                    Review legal notices and trigger instant 1-click unpublish & takedown.
-                  </p>
-
-                  {claims.length === 0 ? (
-                    <div className="p-8 text-center bg-slate-900/40 rounded-2xl border border-slate-800 text-xs text-slate-500">
-                      No active copyright complaints pending.
-                    </div>
-                  ) : (
-                    <div className="flex flex-col gap-3">
-                      {claims.map((c) => (
-                        <div key={c.id} className="p-4 rounded-xl bg-slate-900 border border-slate-800 flex flex-col gap-2">
-                          <div className="flex items-center justify-between">
-                            <span className="font-bold text-xs text-white">{c.claimant_name}</span>
-                            <span className="text-[10px] uppercase font-bold px-2 py-0.5 rounded bg-amber-950 text-amber-400 border border-amber-800">
-                              {c.status}
-                            </span>
-                          </div>
-                          <span className="text-xs text-cyan-400">Email: {c.claimant_email}</span>
-                          <p className="text-xs text-slate-300 bg-slate-950 p-2 rounded">{c.infringement_details}</p>
-                          <div className="flex items-center gap-2 mt-2">
-                            <button
-                              onClick={() => handleUpdateClaim(c.id, 'content_taken_down', true)}
-                              className="px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-xs font-semibold"
-                            >
-                              Takedown Content
-                            </button>
-                            <button
-                              onClick={() => handleUpdateClaim(c.id, 'under_review', false)}
-                              className="px-3 py-1.5 rounded-lg bg-slate-800 text-slate-300 text-xs"
-                            >
-                              Under Review
-                            </button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {/* =====================================================================
                   TAB: AUDIT LOGS
                   ===================================================================== */}
               {currentTab === 'audit' && (
@@ -1722,6 +2083,300 @@ export const AdminModal: React.FC<AdminModalProps> = ({ onClose, onRefreshCatalo
             </div>
           </div>
         )}
+
+        {/* =====================================================================
+            SEASON ADD / EDIT MODAL
+            ===================================================================== */}
+        {editingSeason && (
+          <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+              <div className="p-4 border-b border-slate-800 flex items-center justify-between bg-slate-950/60">
+                <div>
+                  <h3 className="font-bold text-sm text-white">
+                    {editingSeason.season ? 'Edit Season' : 'Add New Season'}
+                  </h3>
+                  <span className="text-[11px] text-cyan-400">
+                    {animeList.find((a) => a.id === editingSeason.animeId)?.title}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setEditingSeason(null)}
+                  className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:text-white"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <form onSubmit={handleSaveSeasonForm} className="p-4 flex flex-col gap-3">
+                <div className="grid grid-cols-3 gap-2">
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-400 mb-1">Season #</label>
+                    <input
+                      type="number"
+                      required
+                      min={1}
+                      value={seasonFormData.season_number}
+                      onChange={(e) => setSeasonFormData({ ...seasonFormData, season_number: Number(e.target.value) })}
+                      className="w-full h-9 px-3 bg-slate-950 border border-slate-800 rounded-lg text-xs text-white"
+                    />
+                  </div>
+                  <div className="col-span-2">
+                    <label className="block text-[11px] font-semibold text-slate-400 mb-1">Season Title</label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="e.g. Season 1, Shibuya Incident Arc"
+                      value={seasonFormData.title}
+                      onChange={(e) => setSeasonFormData({ ...seasonFormData, title: e.target.value })}
+                      className="w-full h-9 px-3 bg-slate-950 border border-slate-800 rounded-lg text-xs text-white"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-400 mb-1">Description (Optional)</label>
+                  <textarea
+                    rows={2}
+                    placeholder="Brief arc or season summary..."
+                    value={seasonFormData.description}
+                    onChange={(e) => setSeasonFormData({ ...seasonFormData, description: e.target.value })}
+                    className="w-full p-2 bg-slate-950 border border-slate-800 rounded-lg text-xs text-white"
+                  />
+                </div>
+
+                <div className="flex items-center gap-2 pt-1">
+                  <input
+                    type="checkbox"
+                    id="season-published"
+                    checked={seasonFormData.is_published}
+                    onChange={(e) => setSeasonFormData({ ...seasonFormData, is_published: e.target.checked })}
+                    className="w-4 h-4 accent-cyan-500 rounded cursor-pointer"
+                  />
+                  <label htmlFor="season-published" className="text-xs text-slate-300 cursor-pointer">
+                    Publish season to audience
+                  </label>
+                </div>
+
+                <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-800 mt-2">
+                  <button
+                    type="button"
+                    onClick={() => setEditingSeason(null)}
+                    className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-5 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs shadow-md shadow-cyan-500/20"
+                  >
+                    {editingSeason.season ? 'Save Changes' : 'Create Season'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* =====================================================================
+            EPISODE ADD / EDIT MODAL
+            ===================================================================== */}
+        {editingEpisode && (() => {
+          const parentAnime = animeList.find((a) => a.id === editingEpisode.animeId);
+          const parentSeason = parentAnime?.seasons?.find((s) => s.id === editingEpisode.seasonId);
+
+          return (
+            <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4">
+              <div className="w-full max-w-lg bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl overflow-hidden max-h-[90vh] flex flex-col animate-in fade-in zoom-in-95 duration-150">
+                <div className="p-4 border-b border-slate-800 flex items-center justify-between bg-slate-950/60 shrink-0">
+                  <div>
+                    <h3 className="font-bold text-sm text-white">
+                      {editingEpisode.episode ? 'Edit Episode' : 'Add New Episode'}
+                    </h3>
+                    <div className="flex items-center gap-1.5 text-[11px] text-cyan-400 mt-0.5">
+                      <span>{parentAnime?.title}</span>
+                      <span>·</span>
+                      <span className="text-slate-300 font-semibold">{parentSeason?.title || `Season ${parentSeason?.season_number}`}</span>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setEditingEpisode(null)}
+                    className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:text-white"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+
+                <form onSubmit={handleSaveEpisodeForm} className="p-4 overflow-y-auto flex flex-col gap-3.5">
+                  <div className="grid grid-cols-3 gap-2">
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-400 mb-1">Episode #</label>
+                      <input
+                        type="number"
+                        required
+                        min={1}
+                        value={episodeFormData.episode_number}
+                        onChange={(e) => setEpisodeFormData({ ...episodeFormData, episode_number: Number(e.target.value) })}
+                        className="w-full h-9 px-3 bg-slate-950 border border-slate-800 rounded-lg text-xs text-white font-mono"
+                      />
+                    </div>
+                    <div className="col-span-2">
+                      <label className="block text-[11px] font-semibold text-slate-400 mb-1">Episode Title</label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="e.g. The Steel Ronin Awakens"
+                        value={episodeFormData.title}
+                        onChange={(e) => setEpisodeFormData({ ...episodeFormData, title: e.target.value })}
+                        className="w-full h-9 px-3 bg-slate-950 border border-slate-800 rounded-lg text-xs text-white"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Video Stream URL */}
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="block text-[11px] font-semibold text-slate-400">
+                        Video Stream URL (MP4 / HLS .m3u8)
+                      </label>
+                      <span className="text-[10px] text-slate-500">Optional: leave empty for fallback</span>
+                    </div>
+                    <input
+                      type="text"
+                      placeholder="https://.../video.mp4 or .m3u8"
+                      value={episodeFormData.stream_url}
+                      onChange={(e) => setEpisodeFormData({ ...episodeFormData, stream_url: e.target.value })}
+                      className="w-full h-9 px-3 bg-slate-950 border border-slate-800 rounded-lg text-xs text-white font-mono"
+                    />
+
+                    {/* Quick Demo Stream Presets */}
+                    <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+                      <span className="text-[10px] text-slate-500">Quick Demo:</span>
+                      <button
+                        type="button"
+                        onClick={() => setEpisodeFormData({ ...episodeFormData, stream_url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4' })}
+                        className="text-[10px] px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-cyan-300 font-mono"
+                      >
+                        Big Buck Bunny
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setEpisodeFormData({ ...episodeFormData, stream_url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4' })}
+                        className="text-[10px] px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-cyan-300 font-mono"
+                      >
+                        Elephants Dream
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setEpisodeFormData({ ...episodeFormData, stream_url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/TearsOfSteel.mp4' })}
+                        className="text-[10px] px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-cyan-300 font-mono"
+                      >
+                        Tears of Steel
+                      </button>
+                      {episodeFormData.stream_url && (
+                        <button
+                          type="button"
+                          onClick={() => setEpisodeFormData({ ...episodeFormData, stream_url: '' })}
+                          className="text-[10px] px-2 py-0.5 rounded bg-rose-950 text-rose-300 font-mono"
+                        >
+                          Clear
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Thumbnail URL & Duration */}
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                    <div className="sm:col-span-2">
+                      <label className="block text-[11px] font-semibold text-slate-400 mb-1">Thumbnail URL</label>
+                      <input
+                        type="text"
+                        placeholder="Image URL..."
+                        value={episodeFormData.thumbnail_url}
+                        onChange={(e) => setEpisodeFormData({ ...episodeFormData, thumbnail_url: e.target.value })}
+                        className="w-full h-9 px-3 bg-slate-950 border border-slate-800 rounded-lg text-xs text-white"
+                      />
+                      <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                        {parentAnime?.backdrop_url && (
+                          <button
+                            type="button"
+                            onClick={() => setEpisodeFormData({ ...episodeFormData, thumbnail_url: parentAnime.backdrop_url! })}
+                            className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300"
+                          >
+                            Use Backdrop
+                          </button>
+                        )}
+                        {parentAnime?.poster_url && (
+                          <button
+                            type="button"
+                            onClick={() => setEpisodeFormData({ ...episodeFormData, thumbnail_url: parentAnime.poster_url })}
+                            className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300"
+                          >
+                            Use Poster
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-semibold text-slate-400 mb-1">Runtime (Mins)</label>
+                      <input
+                        type="number"
+                        min={1}
+                        value={episodeFormData.duration_minutes}
+                        onChange={(e) => setEpisodeFormData({ ...episodeFormData, duration_minutes: Number(e.target.value) })}
+                        className="w-full h-9 px-3 bg-slate-950 border border-slate-800 rounded-lg text-xs text-white font-mono"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Description */}
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-400 mb-1">Episode Synopsis</label>
+                    <textarea
+                      rows={2}
+                      placeholder="Brief episode plot summary..."
+                      value={episodeFormData.description}
+                      onChange={(e) => setEpisodeFormData({ ...episodeFormData, description: e.target.value })}
+                      className="w-full p-2 bg-slate-950 border border-slate-800 rounded-lg text-xs text-white"
+                    />
+                  </div>
+
+                  {/* Published Toggle */}
+                  <div className="flex items-center gap-2 pt-1">
+                    <input
+                      type="checkbox"
+                      id="ep-published"
+                      checked={episodeFormData.is_published}
+                      onChange={(e) => setEpisodeFormData({ ...episodeFormData, is_published: e.target.checked })}
+                      className="w-4 h-4 accent-cyan-500 rounded cursor-pointer"
+                    />
+                    <label htmlFor="ep-published" className="text-xs text-slate-300 cursor-pointer">
+                      Publish episode immediately for viewer streaming
+                    </label>
+                  </div>
+
+                  <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-800 mt-2">
+                    <button
+                      type="button"
+                      onClick={() => setEditingEpisode(null)}
+                      className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      className="px-5 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs shadow-md shadow-cyan-500/20"
+                    >
+                      {editingEpisode.episode ? 'Save Episode' : 'Publish Episode'}
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          );
+        })()}
       </div>
     </div>
   );
