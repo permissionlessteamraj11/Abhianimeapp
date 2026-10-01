@@ -1,0 +1,528 @@
+{
+  "version": 8,
+  "last_updated_at": "2026-10-01T13:33:49.442Z",
+  "categories": [
+    {
+      "id": "all",
+      "name": "All",
+      "icon": "Sparkles",
+      "description": "Everything in the authorized catalog",
+      "display_order": 0,
+      "is_enabled": true
+    },
+    {
+      "id": "anime",
+      "name": "Anime Series",
+      "icon": "Tv",
+      "description": "Serialized animated seasons & episodes",
+      "display_order": 1,
+      "is_enabled": true
+    },
+    {
+      "id": "movies",
+      "name": "Movies",
+      "icon": "Film",
+      "description": "Feature-length animated motion pictures",
+      "display_order": 2,
+      "is_enabled": true
+    },
+    {
+      "id": "action",
+      "name": "Action",
+      "icon": "Flame",
+      "description": "High-octane battles and martial prowess",
+      "display_order": 3,
+      "is_enabled": true
+    },
+    {
+      "id": "fantasy",
+      "name": "Fantasy",
+      "icon": "Wand2",
+      "description": "Mythical realms, magic and sorcery",
+      "display_order": 4,
+      "is_enabled": true
+    },
+    {
+      "id": "scifi",
+      "name": "Sci-Fi",
+      "icon": "Cpu",
+      "description": "Cyberpunk, space exploration and futuristic dystopias",
+      "display_order": 5,
+      "is_enabled": true
+    }
+  ],
+  "genres": [
+    {
+      "id": "action",
+      "name": "Action",
+      "slug": "action",
+      "display_order": 1
+    },
+    {
+      "id": "scifi",
+      "name": "Sci-Fi",
+      "slug": "scifi",
+      "display_order": 2
+    },
+    {
+      "id": "fantasy",
+      "name": "Fantasy",
+      "slug": "fantasy",
+      "display_order": 3
+    },
+    {
+      "id": "cyberpunk",
+      "name": "Cyberpunk",
+      "slug": "cyberpunk",
+      "display_order": 4
+    },
+    {
+      "id": "adventure",
+      "name": "Adventure",
+      "slug": "adventure",
+      "display_order": 5
+    },
+    {
+      "id": "mystery",
+      "name": "Mystery",
+      "slug": "mystery",
+      "display_order": 6
+    },
+    {
+      "id": "supernatural",
+      "name": "Supernatural",
+      "slug": "supernatural",
+      "display_order": 7
+    }
+  ],
+  "anime": [
+    {
+      "id": "anime_chrono_blade",
+      "title": "Chrono Blade: Zero",
+      "slug": "chrono-blade-zero",
+      "description": "In Neo-Kyoto 2142, cybernetically augmented swordsman Jin unravels a temporal conspiracy threatening reality itself. Armed with a blade that bends seconds, he must duel rogue chronomancers across fractured timelines.",
+      "poster_url": "/images/poster_chrono_blade.jpg",
+      "backdrop_url": "/images/hero_cyber_samurai.jpg",
+      "rating": 9.3,
+      "release_year": 2026,
+      "status": "Ongoing",
+      "classification": "PG-13",
+      "language": "Japanese",
+      "available_audio": [
+        "Japanese",
+        "English",
+        "Hindi"
+      ],
+      "available_subtitles": [
+        "English",
+        "Hindi",
+        "Spanish"
+      ],
+      "distribution_rights_confirmed": true,
+      "is_published": true,
+      "view_count": 14200,
+      "genres": [
+        "Action",
+        "Sci-Fi",
+        "Cyberpunk"
+      ],
+      "categories": [
+        "all",
+        "anime",
+        "action",
+        "scifi"
+      ],
+      "seasons": [
+        {
+          "id": "s1_chrono",
+          "anime_id": "anime_chrono_blade",
+          "season_number": 1,
+          "title": "Season 1: Temporal Awakening",
+          "description": "The beginning of Jin’s quest across fractured time sectors in Neo-Kyoto.",
+          "is_published": true,
+          "episodes": [
+            {
+              "id": "ep1_chrono",
+              "anime_id": "anime_chrono_blade",
+              "season_id": "s1_chrono",
+              "episode_number": 1,
+              "title": "Episode 1: The Zero Hour Blade",
+              "description": "Jin activates his temporal chronometer blade during a syndicate ambush in the lower sectors.",
+              "duration_seconds": 1440,
+              "thumbnail_url": "/images/hero_cyber_samurai.jpg",
+              "stream_url": "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",
+              "view_count": 5200,
+              "is_published": true,
+              "distribution_rights_confirmed": true
+            },
+            {
+              "id": "ep2_chrono",
+              "anime_id": "anime_chrono_blade",
+              "season_id": "s1_chrono",
+              "episode_number": 2,
+              "title": "Episode 2: Echoes of the Past",
+              "description": "A shadowy chronomancer assassin strikes at the high council, leaving reality distortions.",
+              "duration_seconds": 1500,
+              "thumbnail_url": "/images/hero_cyber_samurai.jpg",
+              "stream_url": "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4",
+              "view_count": 4600,
+              "is_published": true,
+              "distribution_rights_confirmed": true
+            },
+            {
+              "id": "ep3_chrono",
+              "anime_id": "anime_chrono_blade",
+              "season_id": "s1_chrono",
+              "episode_number": 3,
+              "title": "Episode 3: Fracture Point",
+              "description": "Jin infiltrates the subterranean core reactor before the timeline collapses permanently.",
+              "duration_seconds": 1470,
+              "thumbnail_url": "/images/hero_cyber_samurai.jpg",
+              "stream_url": "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/TearsOfSteel.mp4",
+              "view_count": 4400,
+              "is_published": true,
+              "distribution_rights_confirmed": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "anime_mystic_alchemy",
+      "title": "Mystic Alchemy Chronicles",
+      "slug": "mystic-alchemy-chronicles",
+      "description": "Two alchemist prodigies decipher a celestial grimoire to restore balance to a shattered kingdom while facing ancient chimera beasts.",
+      "poster_url": "/images/hero_celestial_academy.jpg",
+      "backdrop_url": "/images/hero_celestial_academy.jpg",
+      "rating": 8.9,
+      "release_year": 2026,
+      "status": "Ongoing",
+      "classification": "PG-13",
+      "language": "Japanese",
+      "available_audio": [
+        "Japanese",
+        "English"
+      ],
+      "available_subtitles": [
+        "English",
+        "Hindi"
+      ],
+      "distribution_rights_confirmed": true,
+      "is_published": true,
+      "view_count": 9800,
+      "genres": [
+        "Fantasy",
+        "Adventure",
+        "Mystery"
+      ],
+      "categories": [
+        "all",
+        "anime",
+        "fantasy"
+      ],
+      "seasons": [
+        {
+          "id": "s1_mystic",
+          "anime_id": "anime_mystic_alchemy",
+          "season_number": 1,
+          "title": "Season 1: The Celestial Seal",
+          "description": "First journey to the ruins of Mount Valen.",
+          "is_published": true,
+          "episodes": [
+            {
+              "id": "ep1_mystic",
+              "anime_id": "anime_mystic_alchemy",
+              "season_id": "s1_mystic",
+              "episode_number": 1,
+              "title": "Episode 1: The Alchemic Seal",
+              "description": "A glowing grimoire awakens in the royal library of Valen.",
+              "duration_seconds": 1440,
+              "thumbnail_url": "/images/hero_celestial_academy.jpg",
+              "stream_url": "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4",
+              "view_count": 3800,
+              "is_published": true,
+              "distribution_rights_confirmed": true
+            },
+            {
+              "id": "ep2_mystic",
+              "anime_id": "anime_mystic_alchemy",
+              "season_id": "s1_mystic",
+              "episode_number": 2,
+              "title": "Episode 2: Chimera in the Mist",
+              "description": "The alchemist duo faces rogue elemental beasts at the ancient bridge.",
+              "duration_seconds": 1440,
+              "thumbnail_url": "/images/hero_celestial_academy.jpg",
+              "stream_url": "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4",
+              "view_count": 3200,
+              "is_published": true,
+              "distribution_rights_confirmed": true
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "anime_stellar_odyssey",
+      "title": "Stellar Odyssey 2199",
+      "slug": "stellar-odyssey-2199",
+      "description": "An intergalactic explorer crew discovers an alien monolith broadcasting coordinates to the forgotten cradle of humanity.",
+      "poster_url": "/images/hero_space_dystopia.jpg",
+      "backdrop_url": "/images/hero_space_dystopia.jpg",
+      "rating": 9.1,
+      "release_year": 2026,
+      "status": "Ongoing",
+      "classification": "PG-13",
+      "language": "Japanese",
+      "available_audio": [
+        "Japanese",
+        "English"
+      ],
+      "available_subtitles": [
+        "English"
+      ],
+      "distribution_rights_confirmed": true,
+      "is_published": true,
+      "view_count": 8500,
+      "genres": [
+        "Sci-Fi",
+        "Space",
+        "Adventure"
+      ],
+      "categories": [
+        "all",
+        "anime",
+        "scifi"
+      ],
+      "seasons": [
+        {
+          "id": "s1_stellar",
+          "anime_id": "anime_stellar_odyssey",
+          "season_number": 1,
+          "title": "Season 1: Deep Nebula",
+          "description": "Venture beyond known jump gates.",
+          "is_published": true,
+          "episodes": [
+            {
+              "id": "ep1_stellar",
+              "anime_id": "anime_stellar_odyssey",
+              "season_id": "s1_stellar",
+              "episode_number": 1,
+              "title": "Episode 1: The Warp Gate",
+              "description": "The ship Orion jumps into the uncharted Perseus arm.",
+              "duration_seconds": 1520,
+              "thumbnail_url": "/images/hero_space_dystopia.jpg",
+              "stream_url": "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",
+              "view_count": 4100,
+              "is_published": true,
+              "distribution_rights_confirmed": true
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "movies": [
+    {
+      "id": "mov_ghost_protocol",
+      "title": "Ghost Protocol: Neo Tokyo",
+      "slug": "ghost-protocol-neo-tokyo",
+      "description": "A theatrical animated masterpiece following an elite tactical unit hunting down an AI entity that has weaponized cybernetic citizens.",
+      "poster_url": "/images/poster_chrono_blade.jpg",
+      "backdrop_url": "/images/hero_cyber_samurai.jpg",
+      "runtime_minutes": 118,
+      "rating": 9.4,
+      "release_year": 2026,
+      "classification": "PG-13",
+      "language": "Japanese",
+      "available_audio": [
+        "Japanese",
+        "English",
+        "Hindi"
+      ],
+      "available_subtitles": [
+        "English",
+        "Hindi"
+      ],
+      "distribution_rights_confirmed": true,
+      "is_published": true,
+      "view_count": 18400,
+      "genres": [
+        "Action",
+        "Sci-Fi",
+        "Cyberpunk"
+      ],
+      "categories": [
+        "all",
+        "movies",
+        "action",
+        "scifi"
+      ],
+      "stream_url": "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/TearsOfSteel.mp4"
+    },
+    {
+      "id": "mov_spirited_realms",
+      "title": "Spirited Realms: The Sacred Gate",
+      "slug": "spirited-realms-the-sacred-gate",
+      "description": "When an ancient torii gate unlocks between modern Tokyo and the spirit dimension, a gifted shrine maiden must seal it before chaos spreads.",
+      "poster_url": "/images/hero_celestial_academy.jpg",
+      "backdrop_url": "/images/hero_celestial_academy.jpg",
+      "runtime_minutes": 104,
+      "rating": 9,
+      "release_year": 2026,
+      "classification": "PG-13",
+      "language": "Japanese",
+      "available_audio": [
+        "Japanese",
+        "English"
+      ],
+      "available_subtitles": [
+        "English",
+        "Spanish"
+      ],
+      "distribution_rights_confirmed": true,
+      "is_published": true,
+      "view_count": 12100,
+      "genres": [
+        "Fantasy",
+        "Supernatural"
+      ],
+      "categories": [
+        "all",
+        "movies",
+        "fantasy"
+      ],
+      "stream_url": "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4"
+    }
+  ],
+  "hero_banners": [
+    {
+      "id": "banner-01",
+      "title": "Chrono Blade: Zero",
+      "subtitle": "Exclusive Premiere • 4K HDR",
+      "badge_text": "NOW STREAMING",
+      "image_url": "/images/hero_cyber_samurai.jpg",
+      "mobile_image_url": "/images/hero_cyber_samurai.jpg",
+      "linked_type": "anime",
+      "linked_id": "anime_chrono_blade",
+      "display_order": 1,
+      "is_enabled": true
+    },
+    {
+      "id": "banner-02",
+      "title": "Ghost Protocol: Neo Tokyo",
+      "subtitle": "Theatrical Release in Dolby Audio",
+      "badge_text": "MOVIE SPOTLIGHT",
+      "image_url": "/images/poster_chrono_blade.jpg",
+      "mobile_image_url": "/images/poster_chrono_blade.jpg",
+      "linked_type": "movie",
+      "linked_id": "mov_ghost_protocol",
+      "display_order": 2,
+      "is_enabled": true
+    }
+  ],
+  "homepage_sections": [
+    {
+      "id": "sec-01",
+      "title": "New Episodes",
+      "subtitle": "Fresh releases authorized for this week",
+      "section_type": "new_episodes",
+      "content_source": "automatic_recent",
+      "max_items": 8,
+      "display_order": 1,
+      "is_enabled": true
+    },
+    {
+      "id": "sec-02",
+      "title": "Trending Now",
+      "subtitle": "Most watched by community viewers",
+      "section_type": "trending",
+      "content_source": "automatic_views",
+      "max_items": 8,
+      "display_order": 2,
+      "is_enabled": true
+    },
+    {
+      "id": "sec-03",
+      "title": "Popular Movies",
+      "subtitle": "Feature films with theatrical audio",
+      "section_type": "popular_movies",
+      "content_source": "manual",
+      "max_items": 8,
+      "display_order": 3,
+      "is_enabled": true
+    }
+  ],
+  "settings": {
+    "appName": "Stark Anime",
+    "tagline": "Authorized Mobile Anime & Movie Streaming",
+    "theme": "dark_cinematic",
+    "defaultQuality": "1080p",
+    "heroAutoplay": true,
+    "heroDurationMs": 5000,
+    "maxHeroBanners": 5,
+    "recommendationsCount": 9,
+    "maintenanceMode": false,
+    "maintenanceNotice": "Stark Anime is currently performing scheduled infrastructure maintenance. We will be back online shortly.",
+    "announcementActive": false,
+    "announcementText": "🔥 New Season Episodes Just Added in 1080p!",
+    "announcementType": "info",
+    "tokenValidityHours": 4,
+    "streamWatermarkEnabled": true,
+    "antiRipProtection": true,
+    "copyrightEmail": "compliance@starkanime.app",
+    "supportUrl": "https://t.me/StarkAnimeSupport",
+    "antiPiracyEnforced": true
+  },
+  "users": [
+    {
+      "id": "usr-849204812",
+      "telegram_id": 849204812,
+      "first_name": "Ren",
+      "last_name": "Kurogane",
+      "username": "ren_kuro",
+      "language_code": "en",
+      "is_suspended": false,
+      "created_at": "2026-10-01T13:32:50.593Z",
+      "last_active_at": "2026-10-01T13:32:50.593Z"
+    }
+  ],
+  "saved_items": [],
+  "watch_progress": [],
+  "audit_logs": [
+    {
+      "id": "log-1790861629441-xvnj",
+      "admin_username": "rajpapa",
+      "action": "DELETE_ANIME",
+      "entity_type": "anime",
+      "entity_id": "anime-1790861609632",
+      "ip_address": "127.0.0.1",
+      "created_at": "2026-10-01T13:33:49.441Z"
+    },
+    {
+      "id": "log-1790861609632-zqyq",
+      "admin_username": "rajpapa",
+      "action": "SAVE_ANIME",
+      "entity_type": "anime",
+      "entity_id": "anime-1790861609632",
+      "details": {
+        "title": "Demon Slayer Test"
+      },
+      "ip_address": "127.0.0.1",
+      "created_at": "2026-10-01T13:33:29.632Z"
+    },
+    {
+      "id": "log-1790861593955-zxqr",
+      "admin_username": "rajpapa",
+      "action": "LOGIN",
+      "entity_type": "auth",
+      "entity_id": "rajpapa",
+      "details": {
+        "ip": "127.0.0.1"
+      },
+      "ip_address": "127.0.0.1",
+      "created_at": "2026-10-01T13:33:13.955Z"
+    }
+  ],
+  "copyright_claims": [],
+  "reports": []
+}

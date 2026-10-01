@@ -162,6 +162,14 @@ export default function App() {
   useEffect(() => {
     initTelegramWebApp();
     loadHomeData();
+
+    // Subscribe to live catalog synchronization across all devices
+    const unsubscribe = api.subscribeToCatalogUpdates((event) => {
+      console.log('[Stark Anime] Live database sync event:', event);
+      loadHomeData();
+    });
+
+    return () => unsubscribe();
   }, [loadHomeData]);
 
   // Refresh dynamic recommendations
@@ -327,13 +335,28 @@ export default function App() {
     }
   };
 
-  // Filter sections by category if active
-  const filteredSections = homepageSections.filter((sec) => {
-    if (activeCategoryId === 'all') return true;
-    if (activeCategoryId === 'anime') return sec.section_type !== 'popular_movies';
-    if (activeCategoryId === 'movies') return sec.section_type === 'popular_movies';
-    return true;
-  });
+  // Filter sections and items by category if active
+  const filteredSections = homepageSections
+    .filter((sec) => {
+      if (activeCategoryId === 'all') return true;
+      if (activeCategoryId === 'anime') return sec.section_type !== 'popular_movies';
+      if (activeCategoryId === 'movies') return sec.section_type === 'popular_movies';
+      return true;
+    })
+    .map((sec) => {
+      if (activeCategoryId === 'all' || activeCategoryId === 'anime' || activeCategoryId === 'movies') {
+        return sec;
+      }
+      // If a specific genre/theme is selected (e.g. Action, Fantasy, Sci-Fi)
+      const matchingItems = (sec.items || []).filter((item) => {
+        const catMatch = item.categories?.includes(activeCategoryId);
+        const genreMatch = item.genres?.some(
+          (g) => g.toLowerCase() === activeCategoryId.toLowerCase()
+        );
+        return catMatch || genreMatch;
+      });
+      return { ...sec, items: matchingItems };
+    });
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex justify-center selection:bg-cyan-500/30 selection:text-cyan-200">

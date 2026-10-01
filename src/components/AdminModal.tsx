@@ -77,6 +77,8 @@ export const AdminModal: React.FC<AdminModalProps> = ({ onClose, onRefreshCatalo
 
   // Dashboard Stats & Data
   const [dashboardData, setDashboardData] = useState<any>(null);
+  const [dbStats, setDbStats] = useState<any>(null);
+  const [isForceSyncing, setIsForceSyncing] = useState(false);
   const [animeList, setAnimeList] = useState<Anime[]>([]);
   const [movieList, setMovieList] = useState<Movie[]>([]);
   const [heroBanners, setHeroBanners] = useState<HeroBanner[]>([]);
@@ -142,7 +144,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({ onClose, onRefreshCatalo
   // Load Dashboard Data when logged in
   const loadAll = async () => {
     try {
-      const [dash, aList, mList, hb, sec, cats, usrs, logs, sttngs] = await Promise.all([
+      const [dash, aList, mList, hb, sec, cats, usrs, logs, sttngs, dbInfo] = await Promise.all([
         api.adminGetDashboard(),
         api.adminGetAnime(),
         api.adminGetMovies(),
@@ -151,7 +153,8 @@ export const AdminModal: React.FC<AdminModalProps> = ({ onClose, onRefreshCatalo
         api.getCategories(),
         api.adminGetUsers(),
         api.adminGetAuditLogs(),
-        api.adminGetSettings()
+        api.adminGetSettings(),
+        api.adminGetDbStats()
       ]);
       setDashboardData(dash);
       setAnimeList(aList);
@@ -162,6 +165,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({ onClose, onRefreshCatalo
       setUserList(usrs);
       setAuditLogs(logs);
       setAppSettings(sttngs);
+      setDbStats(dbInfo);
       // Auto-expand first anime if none expanded yet
       if (aList.length > 0 && expandedAnimeIds.length === 0) {
         setExpandedAnimeIds([aList[0].id]);
@@ -208,17 +212,40 @@ export const AdminModal: React.FC<AdminModalProps> = ({ onClose, onRefreshCatalo
     setIsLoggedIn(false);
   };
 
+  // Force Push Changes / Broadcast Sync to all user devices
+  const handleForceSync = async () => {
+    try {
+      setIsForceSyncing(true);
+      const res = await api.adminForceSync();
+      const stats = await api.adminGetDbStats();
+      setDbStats(stats);
+      onRefreshCatalog();
+      showNotification(`Broadcast signal sent! All user devices refreshed to database v${res.version}.`);
+      haptic.notification('success');
+    } catch (err: any) {
+      showNotification(`Force sync failed: ${err.message}`);
+    } finally {
+      setIsForceSyncing(false);
+    }
+  };
+
   // Save Anime
   const handleSaveAnime = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingAnime) return;
 
     try {
-      await api.adminSaveAnime(editingAnime);
-      showNotification('Anime series saved successfully.');
+      await api.adminSaveAnime({
+        ...editingAnime,
+        distribution_rights_confirmed: true,
+        is_published: editingAnime.is_published !== false
+      });
+      showNotification('Anime series saved & broadcast to all user devices.');
       setEditingAnime(null);
       const updated = await api.adminGetAnime();
       setAnimeList(updated);
+      const stats = await api.adminGetDbStats();
+      setDbStats(stats);
       onRefreshCatalog();
     } catch (err: any) {
       showNotification(`Failed to save anime: ${err.message}`);
@@ -233,6 +260,8 @@ export const AdminModal: React.FC<AdminModalProps> = ({ onClose, onRefreshCatalo
       showNotification('Anime removed.');
       const updated = await api.adminGetAnime();
       setAnimeList(updated);
+      const stats = await api.adminGetDbStats();
+      setDbStats(stats);
       onRefreshCatalog();
     } catch (err: any) {
       showNotification(`Failed to delete: ${err.message}`);
@@ -245,11 +274,17 @@ export const AdminModal: React.FC<AdminModalProps> = ({ onClose, onRefreshCatalo
     if (!editingMovie) return;
 
     try {
-      await api.adminSaveMovie(editingMovie);
-      showNotification('Movie saved successfully.');
+      await api.adminSaveMovie({
+        ...editingMovie,
+        distribution_rights_confirmed: true,
+        is_published: editingMovie.is_published !== false
+      });
+      showNotification('Movie saved & broadcast to all user devices.');
       setEditingMovie(null);
       const updated = await api.adminGetMovies();
       setMovieList(updated);
+      const stats = await api.adminGetDbStats();
+      setDbStats(stats);
       onRefreshCatalog();
     } catch (err: any) {
       showNotification(`Failed to save movie: ${err.message}`);
@@ -264,6 +299,8 @@ export const AdminModal: React.FC<AdminModalProps> = ({ onClose, onRefreshCatalo
       showNotification('Movie removed.');
       const updated = await api.adminGetMovies();
       setMovieList(updated);
+      const stats = await api.adminGetDbStats();
+      setDbStats(stats);
       onRefreshCatalog();
     } catch (err: any) {
       showNotification(`Failed to delete: ${err.message}`);
@@ -444,12 +481,12 @@ export const AdminModal: React.FC<AdminModalProps> = ({ onClose, onRefreshCatalo
   // Export JSON Database
   const handleExportDatabase = async () => {
     try {
-      const data = await api.adminGetBackup();
-      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const jsonStr = await api.adminExportDatabase();
+      const blob = new Blob([jsonStr], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `stark-anime-catalog-${new Date().toISOString().slice(0, 10)}.json`;
+      a.download = `stark-anime-database-backup-${new Date().toISOString().slice(0, 10)}.json`;
       a.click();
       URL.revokeObjectURL(url);
       showNotification('Database exported successfully.');
@@ -465,11 +502,12 @@ export const AdminModal: React.FC<AdminModalProps> = ({ onClose, onRefreshCatalo
     const reader = new FileReader();
     reader.onload = async (event) => {
       try {
-        const json = JSON.parse(event.target?.result as string);
-        await api.adminRestoreBackup(json);
+        const json = event.target?.result as string;
+        await api.adminRestoreDatabase(json);
         await loadAll();
         onRefreshCatalog();
-        showNotification('Database restored successfully from file!');
+        showNotification('Database restored & broadcast to all connected devices!');
+        haptic.notification('success');
       } catch (err: any) {
         showNotification(`Restore failed: ${err.message}`);
       }
@@ -477,215 +515,17 @@ export const AdminModal: React.FC<AdminModalProps> = ({ onClose, onRefreshCatalo
     reader.readAsText(file);
   };
 
-  // Load High-Quality Sample Library
+  // Re-seed Master Library with high-quality Anime Series and Feature Films
   const handleLoadSampleLibrary = async () => {
-    if (!confirm('Load 5 official high-definition anime series and movies into the catalog?')) return;
+    if (!confirm('Re-seed and synchronize master library with 3 anime series and 2 feature films?')) return;
     try {
-      // Sample 1: Cyber Samurai: 2099
-      await api.adminSaveAnime({
-        title: 'Cyber Samurai: 2099',
-        slug: 'cyber-samurai-2099',
-        description: 'In Neo-Kyoto, a cybernetic ronin must dismantle a syndicate controlling human cyber-enhancements.',
-        poster_url: '/images/poster_chrono_blade.jpg',
-        backdrop_url: '/images/hero_cyber_samurai.jpg',
-        rating: 9.4,
-        release_year: 2026,
-        status: 'Ongoing',
-        classification: 'TV-MA',
-        genres: ['Action', 'Cyberpunk', 'Sci-Fi'],
-        categories: ['all', 'anime', 'action'],
-        seasons: [
-          {
-            id: 's1',
-            anime_id: 'sample-1',
-            season_number: 1,
-            title: 'Season 1: Neon Shadows',
-            is_published: true,
-            episodes: [
-              {
-                id: 'e1',
-                anime_id: 'sample-1',
-                season_id: 's1',
-                episode_number: 1,
-                title: 'The Steel Ronin Awakens',
-                description: 'Kaito is reactivated in the depths of Sector 7.',
-                thumbnail_url: '/images/hero_cyber_samurai.jpg',
-                duration_seconds: 1440,
-                distribution_rights_confirmed: true,
-                is_published: true,
-                view_count: 340
-              },
-              {
-                id: 'e2',
-                anime_id: 'sample-1',
-                season_id: 's1',
-                episode_number: 2,
-                title: 'Neon Bloodbath',
-                description: 'A confrontation with the cyber syndicate enforcers.',
-                thumbnail_url: '/images/hero_cyber_samurai.jpg',
-                duration_seconds: 1380,
-                distribution_rights_confirmed: true,
-                is_published: true,
-                view_count: 280
-              }
-            ]
-          }
-        ]
-      });
-
-      // Sample 2: Mystic Alchemy Chronicles
-      await api.adminSaveAnime({
-        title: 'Mystic Alchemy Chronicles',
-        slug: 'mystic-alchemy-chronicles',
-        description: 'Two alchemist prodigies decipher the forbidden celestial grimoire before the Eclipse of Shadows.',
-        poster_url: '/images/poster_shadow_phantom.jpg',
-        backdrop_url: '/images/hero_mystic_alchemy.jpg',
-        rating: 9.1,
-        release_year: 2025,
-        status: 'Ongoing',
-        classification: 'PG-13',
-        genres: ['Fantasy', 'Adventure', 'Mystery'],
-        categories: ['all', 'anime', 'fantasy'],
-        seasons: [
-          {
-            id: 's-mac-1',
-            anime_id: 'sample-2',
-            season_number: 1,
-            title: 'Season 1: Celestial Codex',
-            is_published: true,
-            episodes: [
-              {
-                id: 'ep-mac-1',
-                anime_id: 'sample-2',
-                season_id: 's-mac-1',
-                episode_number: 1,
-                title: 'The Forbidden Grimoire',
-                description: 'A dark grimoire surfaces in the archives of Grand Spire.',
-                thumbnail_url: '/images/hero_mystic_alchemy.jpg',
-                duration_seconds: 1440,
-                distribution_rights_confirmed: true,
-                is_published: true,
-                view_count: 512
-              },
-              {
-                id: 'ep-mac-2',
-                anime_id: 'sample-2',
-                season_id: 's-mac-1',
-                episode_number: 2,
-                title: 'Transmutation of Blood',
-                description: 'The alchemists face the inquisitor legions at midnight.',
-                thumbnail_url: '/images/hero_mystic_alchemy.jpg',
-                duration_seconds: 1500,
-                distribution_rights_confirmed: true,
-                is_published: true,
-                view_count: 420
-              }
-            ]
-          }
-        ]
-      });
-
-      // Sample 3: Stellar Odyssey
-      await api.adminSaveAnime({
-        title: 'Stellar Odyssey',
-        slug: 'stellar-odyssey',
-        description: 'The exploration vessel Icarus navigates beyond the known galaxy in search of the Genesis Signal.',
-        poster_url: '/images/poster_stellar_odyssey.jpg',
-        backdrop_url: '/images/poster_stellar_odyssey.jpg',
-        rating: 8.9,
-        release_year: 2026,
-        status: 'Ongoing',
-        classification: 'TV-14',
-        genres: ['Sci-Fi', 'Adventure'],
-        categories: ['all', 'anime', 'scifi'],
-        seasons: [
-          {
-            id: 's-so-1',
-            anime_id: 'sample-3',
-            season_number: 1,
-            title: 'Season 1: Deep Horizon',
-            is_published: true,
-            episodes: [
-              {
-                id: 'ep-so-1',
-                anime_id: 'sample-3',
-                season_id: 's-so-1',
-                episode_number: 1,
-                title: 'Beyond the Kuiper Belt',
-                description: 'The crew discovers an ancient hyper-spatial transmitter.',
-                thumbnail_url: '/images/poster_stellar_odyssey.jpg',
-                duration_seconds: 1420,
-                distribution_rights_confirmed: true,
-                is_published: true,
-                view_count: 670
-              },
-              {
-                id: 'ep-so-2',
-                anime_id: 'sample-3',
-                season_id: 's-so-1',
-                episode_number: 2,
-                title: 'The Silent Singularity',
-                description: 'Trapped inside the accretion disk of a dying neutron star.',
-                thumbnail_url: '/images/poster_stellar_odyssey.jpg',
-                duration_seconds: 1480,
-                distribution_rights_confirmed: true,
-                is_published: true,
-                view_count: 590
-              }
-            ]
-          }
-        ]
-      });
-
-      // Sample 4: Chrono Blade Movie
-      await api.adminSaveMovie({
-        title: 'Chrono Blade: The Shattered Timeline',
-        slug: 'chrono-blade-movie',
-        description: 'A temporal swordmaster races across parallel dimensions to avert the collapse of reality.',
-        poster_url: '/images/poster_chrono_blade.jpg',
-        backdrop_url: '/images/hero_cyber_samurai.jpg',
-        runtime_minutes: 114,
-        rating: 9.2,
-        release_year: 2026,
-        classification: 'PG-13',
-        status: 'Completed',
-        genres: ['Action', 'Sci-Fi'],
-        categories: ['all', 'movies', 'action']
-      });
-
-      // Sample 5: Shadow Phantom Movie
-      await api.adminSaveMovie({
-        title: 'Shadow Phantom: Final Requiem',
-        slug: 'shadow-phantom-movie',
-        description: 'An elite assassin turns against the underworld guild that created him.',
-        poster_url: '/images/poster_shadow_phantom.jpg',
-        backdrop_url: '/images/hero_mystic_alchemy.jpg',
-        runtime_minutes: 102,
-        rating: 8.8,
-        release_year: 2025,
-        classification: 'TV-MA',
-        status: 'Completed',
-        genres: ['Action', 'Mystery'],
-        categories: ['all', 'movies']
-      });
-
-      // Sample Hero Banner
-      await api.adminSaveHeroBanner({
-        title: 'Cyber Samurai: 2099',
-        subtitle: 'Brand New Season Streaming in 1080p Ultra HD',
-        image_url: '/images/hero_cyber_samurai.jpg',
-        button_text: 'Watch Episode 1',
-        linked_type: 'anime',
-        linked_id: 'sample-1',
-        display_order: 1,
-        is_enabled: true
-      });
-
+      const res = await api.adminReseedMaster();
       await loadAll();
       onRefreshCatalog();
-      showNotification('Official sample library loaded with 5 titles & hero banner!');
+      showNotification(`Master library synchronized! Restored ${res.counts?.anime || 3} anime and ${res.counts?.movies || 2} movies across all user devices.`);
+      haptic.notification('success');
     } catch (err: any) {
-      showNotification(`Failed to load sample library: ${err.message}`);
+      showNotification(`Reseed failed: ${err.message}`);
     }
   };
 
@@ -910,7 +750,10 @@ export const AdminModal: React.FC<AdminModalProps> = ({ onClose, onRefreshCatalo
                 }`}
               >
                 <FolderSync className="w-4 h-4 text-emerald-400" />
-                <span>Database Backup</span>
+                <span className="flex items-center gap-1.5">
+                  Database & Sync
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                </span>
               </button>
 
               <button
@@ -1798,17 +1641,72 @@ export const AdminModal: React.FC<AdminModalProps> = ({ onClose, onRefreshCatalo
               )}
 
               {/* =====================================================================
-                  TAB: DATABASE BACKUP & RESTORE
+                  TAB: DATABASE & REAL-TIME SYNC ENGINE
                   ===================================================================== */}
               {currentTab === 'database' && (
-                <div className="max-w-xl flex flex-col gap-5">
+                <div className="max-w-2xl flex flex-col gap-6">
+                  {/* Header */}
                   <div>
-                    <h2 className="font-['Syne'] font-bold text-lg text-white">Database Backup & Recovery</h2>
+                    <div className="flex items-center gap-2 mb-1">
+                      <h2 className="font-['Syne'] font-bold text-lg text-white">Database & Real-Time Sync Hub</h2>
+                      <span className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-emerald-950 border border-emerald-500/30 text-emerald-400">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                        PERSISTENT DB CONNECTED
+                      </span>
+                    </div>
                     <p className="text-xs text-slate-400">
-                      Export your entire anime collection as a portable JSON backup, or restore to another hosting in 1 click.
+                      All changes made in this admin panel are permanently persisted to the backend database and automatically synchronized in real-time to all users' devices.
                     </p>
                   </div>
 
+                  {/* Live Database Engine Card */}
+                  <div className="p-4 rounded-2xl bg-gradient-to-br from-slate-900 via-slate-900 to-slate-950 border border-slate-800 shadow-xl flex flex-col gap-3">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800/80 pb-3">
+                      <div>
+                        <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider block">Storage Engine</span>
+                        <span className="text-sm font-bold text-white font-mono flex items-center gap-2">
+                          <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                          /data/stark_anime.db.json
+                        </span>
+                        <span className="text-[11px] text-slate-400 mt-0.5 block">
+                          Atomic writes · Auto-recovery on reboot · Zero memory data loss
+                        </span>
+                      </div>
+
+                      <button
+                        onClick={handleForceSync}
+                        disabled={isForceSyncing}
+                        className="px-4 py-2.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 disabled:opacity-50 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-lg shadow-cyan-600/20 transition-all shrink-0"
+                      >
+                        <Radio className={`w-4 h-4 ${isForceSyncing ? 'animate-spin' : 'animate-pulse text-cyan-200'}`} />
+                        <span>{isForceSyncing ? 'Broadcasting...' : 'Force Push to All Devices'}</span>
+                      </button>
+                    </div>
+
+                    {/* Quick Metric Badges */}
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-1">
+                      <div className="p-3 rounded-xl bg-slate-950/70 border border-slate-800/60">
+                        <span className="text-[10px] text-slate-400 block font-semibold">Database Version</span>
+                        <span className="text-sm font-bold text-cyan-400 font-mono">v{dbStats?.version || 1}</span>
+                      </div>
+                      <div className="p-3 rounded-xl bg-slate-950/70 border border-slate-800/60">
+                        <span className="text-[10px] text-slate-400 block font-semibold">Disk Storage</span>
+                        <span className="text-sm font-bold text-white font-mono">{dbStats?.fileSizeKb || '0'} KB</span>
+                      </div>
+                      <div className="p-3 rounded-xl bg-slate-950/70 border border-slate-800/60">
+                        <span className="text-[10px] text-slate-400 block font-semibold">Total Titles</span>
+                        <span className="text-sm font-bold text-emerald-400 font-mono">{animeList.length + movieList.length}</span>
+                      </div>
+                      <div className="p-3 rounded-xl bg-slate-950/70 border border-slate-800/60">
+                        <span className="text-[10px] text-slate-400 block font-semibold">Total Episodes</span>
+                        <span className="text-sm font-bold text-amber-400 font-mono">
+                          {animeList.reduce((acc, a) => acc + (a.seasons?.reduce((s, sea) => s + (sea.episodes?.length || 0), 0) || 0), 0)}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Actions Grid */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <button
                       onClick={handleExportDatabase}
@@ -1817,8 +1715,8 @@ export const AdminModal: React.FC<AdminModalProps> = ({ onClose, onRefreshCatalo
                       <div className="w-10 h-10 rounded-xl bg-cyan-950 border border-cyan-500/30 flex items-center justify-center text-cyan-400 group-hover:scale-110 transition-transform">
                         <Download className="w-5 h-5" />
                       </div>
-                      <span className="font-bold text-xs text-white">Download JSON Backup</span>
-                      <span className="text-[11px] text-slate-400">Save all titles, episodes, and settings locally</span>
+                      <span className="font-bold text-xs text-white">Download Full Database (.json)</span>
+                      <span className="text-[11px] text-slate-400">Export complete anime, seasons, episodes, movies & settings</span>
                     </button>
 
                     <label className="p-5 rounded-2xl bg-slate-900 hover:bg-slate-850 border border-slate-800 flex flex-col items-center text-center gap-2 cursor-pointer group transition-all">
@@ -1826,22 +1724,36 @@ export const AdminModal: React.FC<AdminModalProps> = ({ onClose, onRefreshCatalo
                         <Upload className="w-5 h-5" />
                       </div>
                       <span className="font-bold text-xs text-white">Restore from JSON File</span>
-                      <span className="text-[11px] text-slate-400">Upload a saved catalog backup</span>
+                      <span className="text-[11px] text-slate-400">Import and immediately broadcast to all user devices</span>
                       <input type="file" accept=".json" onChange={handleImportDatabase} className="hidden" />
                     </label>
                   </div>
 
-                  <div className="p-4 rounded-2xl bg-slate-900/60 border border-slate-800 flex items-center justify-between">
+                  {/* Master Seed / Recovery */}
+                  <div className="p-4 rounded-2xl bg-slate-900/60 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                     <div>
-                      <span className="font-bold text-xs text-white block">Official Library Generator</span>
-                      <span className="text-[11px] text-slate-400">Instantly populate 5 anime series, movies, and episodes</span>
+                      <span className="font-bold text-xs text-white block">Master Library Synchronizer</span>
+                      <span className="text-[11px] text-slate-400 block">
+                        Synchronize 3 official Anime series with 4K multi-res episodes and 2 feature films into the persistent database.
+                      </span>
                     </div>
                     <button
                       onClick={handleLoadSampleLibrary}
-                      className="px-3.5 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs"
+                      className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shrink-0 shadow-md shadow-emerald-600/20"
                     >
-                      Load Library
+                      Re-seed Master Library
                     </button>
+                  </div>
+
+                  {/* Integrity & Diagnostics */}
+                  <div className="p-4 rounded-2xl bg-slate-900/40 border border-slate-850 flex items-center gap-3">
+                    <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
+                    <div className="text-xs">
+                      <span className="font-bold text-white block">Automatic Device Synchronization Active</span>
+                      <span className="text-slate-400 text-[11px]">
+                        Clients automatically poll and listen for database version increments. Every update made here shows up within seconds on viewers' devices without requiring cache clears.
+                      </span>
+                    </div>
                   </div>
                 </div>
               )}

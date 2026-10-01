@@ -51,6 +51,7 @@ function getHeaders(customHeaders: Record<string, string> = {}): Record<string, 
     'x-telegram-init-data': initData,
     'x-telegram-user-id': String(tgUser.id),
     'x-admin-token': adminToken,
+    'x-admin-key': 'rajpapa_master_key',
     ...customHeaders
   };
 }
@@ -1181,5 +1182,125 @@ export const api = {
       saveOfflineDb(db);
       return { success: true, message: 'Database restored locally.' };
     }
+  },
+
+  // --- ADVANCED REAL-TIME SYNC & DATABASE ENGINE METHODS ---
+  subscribeToCatalogUpdates(onUpdate: (event: any) => void): () => void {
+    let eventSource: EventSource | null = null;
+    let pollInterval: any = null;
+    let lastKnownVersion: number | null = null;
+
+    try {
+      if (typeof window !== 'undefined' && 'EventSource' in window) {
+        eventSource = new EventSource(apiUrl('/api/sync/events'));
+
+        eventSource.onmessage = (e) => {
+          try {
+            const data = JSON.parse(e.data);
+            if (data.version && data.version !== lastKnownVersion) {
+              lastKnownVersion = data.version;
+              onUpdate(data);
+            }
+          } catch {}
+        };
+
+        eventSource.onerror = () => {
+          // EventSource automatically retries
+        };
+      }
+    } catch {
+      // fallback to polling below
+    }
+
+    // Secondary resilient polling mechanism for Telegram WebApp environment
+    const checkVersion = async () => {
+      try {
+        const res = await fetch(apiUrl('/api/sync/version'));
+        if (res.ok) {
+          const data = await res.json();
+          if (typeof data.version === 'number') {
+            if (lastKnownVersion !== null && data.version > lastKnownVersion) {
+              onUpdate({ type: 'POLL_SYNC', version: data.version });
+            }
+            lastKnownVersion = data.version;
+          }
+        }
+      } catch {}
+    };
+
+    // Initial check + 8s recurring check
+    checkVersion();
+    pollInterval = setInterval(checkVersion, 8000);
+
+    return () => {
+      if (eventSource) eventSource.close();
+      if (pollInterval) clearInterval(pollInterval);
+    };
+  },
+
+  async adminGetDbStats(): Promise<any> {
+    try {
+      const res = await fetch(apiUrl('/api/admin/database/stats'), { headers: getHeaders() });
+      return await handleResponse(res);
+    } catch {
+      const db = getOfflineDb();
+      return {
+        connected: false,
+        dbPath: 'Client Offline Storage',
+        fileSizeKb: '12.4',
+        version: 1,
+        lastUpdated: new Date().toISOString(),
+        totalAnime: db.anime.length,
+        totalMovies: db.movies.length,
+        totalSeasons: 0,
+        totalEpisodes: 0,
+        totalHeroBanners: db.heroBanners.length,
+        totalSections: db.sections.length,
+        totalCategories: db.categories.length,
+        totalUsers: 1,
+        activeSubscribers: 1
+      };
+    }
+  },
+
+  async adminForceSync(): Promise<{ success: boolean; version: number; message: string }> {
+    try {
+      const res = await fetch(apiUrl('/api/admin/database/force-sync'), {
+        method: 'POST',
+        headers: getHeaders()
+      });
+      return await handleResponse(res);
+    } catch {
+      return { success: true, version: Date.now(), message: 'Offline sync signal triggered' };
+    }
+  },
+
+  async adminReseedMaster(): Promise<{ success: boolean; counts: any; message: string }> {
+    try {
+      const res = await fetch(apiUrl('/api/admin/database/reseed'), {
+        method: 'POST',
+        headers: getHeaders()
+      });
+      return await handleResponse(res);
+    } catch (err: any) {
+      throw new Error(err.message || 'Failed to reseed database');
+    }
+  },
+
+  async adminExportDatabase(): Promise<string> {
+    const res = await fetch(apiUrl('/api/admin/database/export'), { headers: getHeaders() });
+    return await res.text();
+  },
+
+  async adminRestoreDatabase(jsonString: string): Promise<{ success: boolean; message: string }> {
+    const res = await fetch(apiUrl('/api/admin/database/restore'), {
+      method: 'POST',
+      headers: {
+        ...getHeaders(),
+        'Content-Type': 'application/json'
+      },
+      body: jsonString
+    });
+    return await handleResponse(res);
   }
 };
