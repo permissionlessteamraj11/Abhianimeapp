@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import Hls from 'hls.js';
 import { Anime, Movie, Episode, VideoQuality, Season } from '../types';
 import { api } from '../lib/api';
 import { haptic } from '../lib/telegram';
@@ -146,6 +147,36 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
   useEffect(() => {
     loadStreamToken();
   }, [loadStreamToken]);
+
+  // HLS.js Attachment effect
+  useEffect(() => {
+    if (!streamUrl || !videoRef.current) return;
+
+    let hls: Hls | null = null;
+    const isM3U8 = streamUrl.includes(".m3u8") || streamUrl.includes("m3u8");
+
+    if (isM3U8 && Hls.isSupported()) {
+      hls = new Hls({
+        enableWorker: true,
+        lowLatencyMode: true,
+      });
+      hls.loadSource(streamUrl);
+      hls.attachMedia(videoRef.current);
+      hls.on(Hls.Events.MANIFEST_PARSED, () => {
+        if (videoRef.current && isPlaying) {
+          videoRef.current.play().catch(() => {});
+        }
+      });
+    } else if (videoRef.current.canPlayType("application/vnd.apple.mpegurl")) {
+      videoRef.current.src = streamUrl;
+    }
+
+    return () => {
+      if (hls) {
+        hls.destroy();
+      }
+    };
+  }, [streamUrl]);
 
   // Handle Controls Auto-hide
   const resetControlsTimeout = () => {
@@ -397,14 +428,14 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
           />
         ) : (
           <div className="w-full h-full flex items-center justify-center bg-slate-950">
-            <div className="w-12 h-12 rounded-full border-2 border-rose-500 border-t-transparent animate-spin" />
+            <div className="w-12 h-12 rounded-full border-2 border-cyan-500 border-t-transparent animate-spin" />
           </div>
         )}
 
         {/* LOADING SPINNER */}
         {isLoadingStream && (
           <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/75 backdrop-blur-sm z-10 gap-3">
-            <div className="w-12 h-12 rounded-full border-2 border-rose-500 border-t-transparent animate-spin drop-shadow-[0_0_12px_rgba(244,63,94,0.6)]" />
+            <div className="w-12 h-12 rounded-full border-2 border-cyan-500 border-t-transparent animate-spin drop-shadow-[0_0_12px_rgba(6,182,212,0.6)]" />
             <span className="text-xs font-semibold text-slate-200">Connecting to {selectedServer === 'server1' ? 'Ultra CDN' : selectedServer === 'server2' ? 'HD Server' : 'Direct Server'}...</span>
           </div>
         )}
@@ -412,13 +443,13 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
         {/* ERROR OVERLAY */}
         {streamError && (
           <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-950/95 p-6 text-center z-10 gap-3">
-            <AlertCircle className="w-12 h-12 text-rose-500 drop-shadow-[0_0_10px_rgba(244,63,94,0.5)]" />
+            <AlertCircle className="w-12 h-12 text-cyan-500 drop-shadow-[0_0_10px_rgba(6,182,212,0.5)]" />
             <h3 className="font-bold text-base text-white">Stream Authorization Error</h3>
             <p className="text-xs text-slate-400 max-w-sm">{streamError}</p>
             <div className="flex items-center gap-2 mt-2">
               <button
                 onClick={() => loadStreamToken(currentQuality, selectedServer)}
-                className="px-4 py-2 bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-500 hover:to-red-500 text-white rounded-xl text-xs font-semibold shadow-lg shadow-rose-600/30"
+                className="px-4 py-2 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-500 hover:to-red-500 text-white rounded-xl text-xs font-semibold shadow-lg shadow-cyan-500/30"
               >
                 Retry Connection
               </button>
@@ -438,7 +469,7 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
         {/* AUTO-NEXT OVERLAY */}
         {autoNextCountdown !== null && (
           <div className="absolute inset-0 bg-black/85 backdrop-blur-md flex flex-col items-center justify-center p-6 z-20 gap-3 animate-in fade-in">
-            <span className="text-xs font-semibold text-rose-400 uppercase tracking-wider">Up Next in {autoNextCountdown}s</span>
+            <span className="text-xs font-semibold text-cyan-400 uppercase tracking-wider">Up Next in {autoNextCountdown}s</span>
             <h3 className="text-lg font-bold text-white text-center">
               Next Episode Playing Automatically
             </h3>
@@ -451,7 +482,7 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
               </button>
               <button
                 onClick={handleNextEpisode}
-                className="px-5 py-2 rounded-xl bg-gradient-to-r from-rose-600 to-red-600 text-white text-xs font-semibold shadow-lg shadow-rose-600/30 flex items-center gap-1.5"
+                className="px-5 py-2 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 text-white text-xs font-semibold shadow-lg shadow-cyan-500/30 flex items-center gap-1.5"
               >
                 <Play className="w-3.5 h-3.5 fill-white" />
                 Play Now
@@ -463,7 +494,7 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
         {/* END OF SERIES NOTICE */}
         {endOfSeriesMessage && (
           <div className="absolute inset-0 bg-black/90 backdrop-blur-md flex flex-col items-center justify-center p-6 z-20 gap-3 animate-in fade-in">
-            <div className="w-12 h-12 rounded-full bg-rose-500/20 border border-rose-500/40 flex items-center justify-center text-rose-400">
+            <div className="w-12 h-12 rounded-full bg-cyan-500/20 border border-cyan-500/40 flex items-center justify-center text-cyan-400">
               <Check className="w-6 h-6" />
             </div>
             <h3 className="text-lg font-bold text-white text-center">{endOfSeriesMessage}</h3>
@@ -486,7 +517,7 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
               </button>
               <button
                 onClick={onClose}
-                className="px-5 py-2 rounded-xl bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-500 hover:to-red-500 text-white text-xs font-semibold shadow-lg shadow-rose-600/30"
+                className="px-5 py-2 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-500 hover:to-red-500 text-white text-xs font-semibold shadow-lg shadow-cyan-500/30"
               >
                 Done
               </button>
@@ -515,7 +546,7 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
 
             <div className="flex flex-col items-center text-center px-2 max-w-[55%]">
               <h4 className="text-sm font-bold text-white tracking-tight line-clamp-1">{content.title}</h4>
-              <span className="text-[11px] text-rose-400 font-semibold flex items-center gap-1">
+              <span className="text-[11px] text-cyan-400 font-semibold flex items-center gap-1">
                 {isMovie
                   ? 'Movie Feature • HD'
                   : `S${currentSeason?.season_number || 1} E${currentEpisode?.episode_number || 1}: ${currentEpisode?.title || ''}`}
@@ -533,12 +564,12 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
                   }}
                   className={`min-h-[40px] px-2.5 py-1.5 flex items-center gap-1.5 rounded-xl backdrop-blur-md border text-xs font-semibold transition-all ${
                     showEpisodeDrawer
-                      ? 'bg-rose-600 border-rose-500 text-white shadow-lg shadow-rose-600/30'
+                      ? 'bg-cyan-500 border-cyan-500 text-white shadow-lg shadow-cyan-500/30'
                       : 'bg-black/60 hover:bg-black/80 text-slate-200 border-white/10'
                   }`}
                   title="View Episode List"
                 >
-                  <Layers className="w-3.5 h-3.5 text-rose-400" />
+                  <Layers className="w-3.5 h-3.5 text-cyan-400" />
                   <span className="hidden sm:inline">Episodes</span>
                 </button>
               )}
@@ -552,7 +583,7 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
                   setActiveMenuTab('main');
                 }}
                 className={`min-h-[40px] min-w-[40px] flex items-center justify-center rounded-xl backdrop-blur-md border transition-all ${
-                  showSettingsMenu ? 'bg-rose-600/30 border-rose-500 text-rose-400' : 'bg-black/60 hover:bg-black/80 text-white border-white/10'
+                  showSettingsMenu ? 'bg-cyan-500/30 border-cyan-500 text-cyan-400' : 'bg-black/60 hover:bg-black/80 text-white border-white/10'
                 }`}
                 aria-label="Playback Settings"
               >
@@ -588,10 +619,10 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
 
             <button
               onClick={togglePlay}
-              className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-gradient-to-tr from-rose-600 to-red-600 text-white flex items-center justify-center shadow-2xl shadow-rose-600/50 active:scale-95 transition-all border border-rose-400/40"
+              className="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-gradient-to-tr from-cyan-500 to-blue-600 text-slate-950 flex items-center justify-center shadow-2xl shadow-cyan-500/50 active:scale-95 transition-all border border-cyan-400/40"
               aria-label={isPlaying ? 'Pause' : 'Play'}
             >
-              {isPlaying ? <Pause className="w-8 h-8 fill-white" /> : <Play className="w-8 h-8 fill-white ml-1" />}
+              {isPlaying ? <Pause className="w-8 h-8 fill-slate-950" /> : <Play className="w-8 h-8 fill-slate-950 ml-1" />}
             </button>
 
             <button
@@ -623,9 +654,9 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
             <div className="flex justify-center pointer-events-auto">
               <button
                 onClick={skipIntro}
-                className="px-3.5 py-1.5 rounded-full bg-black/60 hover:bg-rose-950/80 border border-rose-500/40 text-rose-300 text-[11px] font-bold backdrop-blur-md flex items-center gap-1.5 shadow-md shadow-black/60 active:scale-95 transition-all"
+                className="px-3.5 py-1.5 rounded-full bg-black/60 hover:bg-cyan-950/80 border border-cyan-500/40 text-cyan-300 text-[11px] font-bold backdrop-blur-md flex items-center gap-1.5 shadow-md shadow-black/60 active:scale-95 transition-all"
               >
-                <FastForward className="w-3.5 h-3.5 text-rose-400" />
+                <FastForward className="w-3.5 h-3.5 text-cyan-400" />
                 <span>Skip Intro (+85s)</span>
               </button>
             </div>
@@ -644,7 +675,7 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
                 max={duration || 1}
                 value={currentTime}
                 onChange={handleSeekChange}
-                className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-rose-500 hover:h-2 transition-all"
+                className="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-cyan-500 hover:h-2 transition-all"
               />
               <span className="text-[11px] font-mono text-slate-400 tabular-nums">
                 {formatTime(duration)}
@@ -659,7 +690,7 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
                   className="min-h-[40px] min-w-[40px] flex items-center justify-center text-slate-300 hover:text-white"
                   aria-label={isMuted ? 'Unmute' : 'Mute'}
                 >
-                  {isMuted ? <VolumeX className="w-4 h-4 text-rose-400" /> : <Volume2 className="w-4 h-4" />}
+                  {isMuted ? <VolumeX className="w-4 h-4 text-cyan-400" /> : <Volume2 className="w-4 h-4" />}
                 </button>
 
                 {/* Quality pill */}
@@ -668,9 +699,9 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
                     setShowSettingsMenu(true);
                     setActiveMenuTab('quality');
                   }}
-                  className="flex items-center gap-1 text-[10px] font-mono bg-slate-900/80 border border-rose-500/30 px-2 py-1 rounded-lg text-rose-300 hover:border-rose-400"
+                  className="flex items-center gap-1 text-[10px] font-mono bg-slate-900/80 border border-cyan-500/30 px-2 py-1 rounded-lg text-cyan-300 hover:border-cyan-400"
                 >
-                  <ShieldCheck className="w-3 h-3 text-rose-400" />
+                  <ShieldCheck className="w-3 h-3 text-cyan-400" />
                   <span>{currentQuality}</span>
                 </button>
 
@@ -682,7 +713,7 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
                   }}
                   className="hidden sm:flex items-center gap-1 text-[10px] bg-slate-900/80 border border-slate-800 px-2 py-1 rounded-lg text-slate-300 hover:text-white"
                 >
-                  <Server className="w-3 h-3 text-rose-400" />
+                  <Server className="w-3 h-3 text-cyan-400" />
                   <span>{selectedServer === 'server1' ? 'CDN 1' : selectedServer === 'server2' ? 'HD 2' : 'Direct'}</span>
                 </button>
               </div>
@@ -694,7 +725,7 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
                     setShowSettingsMenu(true);
                     setActiveMenuTab('speed');
                   }}
-                  className="text-[11px] font-mono font-bold text-slate-300 hover:text-rose-400 px-2 py-1 rounded-lg bg-black/40 border border-white/10"
+                  className="text-[11px] font-mono font-bold text-slate-300 hover:text-cyan-400 px-2 py-1 rounded-lg bg-black/40 border border-white/10"
                 >
                   {playbackSpeed}x
                 </button>
@@ -720,7 +751,7 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
           >
             <div className="flex items-center justify-between pb-3 border-b border-slate-800 mb-3">
               <div className="flex items-center gap-2">
-                <Tv className="w-4 h-4 text-rose-500" />
+                <Tv className="w-4 h-4 text-cyan-500" />
                 <h4 className="font-bold text-sm text-white">
                   {currentSeason?.title || 'Episodes'} ({allSeasonEpisodes.length})
                 </h4>
@@ -747,7 +778,7 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
                     }}
                     className={`p-2 rounded-xl flex items-center gap-3 text-left transition-all border ${
                       isSelected
-                        ? 'bg-rose-950/50 border-rose-500/80 shadow-md shadow-rose-950'
+                        ? 'bg-cyan-950/50 border-cyan-500/80 shadow-md shadow-cyan-950'
                         : 'bg-slate-900/60 hover:bg-slate-850 border-slate-800 text-slate-300'
                     }`}
                   >
@@ -761,7 +792,7 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
                         }}
                       />
                       {isSelected && (
-                        <div className="absolute inset-0 bg-rose-600/30 flex items-center justify-center">
+                        <div className="absolute inset-0 bg-cyan-500/30 flex items-center justify-center">
                           <Play className="w-4 h-4 fill-white text-white drop-shadow" />
                         </div>
                       )}
@@ -769,7 +800,7 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
                     <div className="min-w-0">
                       <div className="flex items-center gap-1.5">
                         <span className={`text-[10px] font-mono font-bold px-1 py-0.5 rounded ${
-                          isSelected ? 'bg-rose-600 text-white' : 'bg-slate-800 text-rose-400'
+                          isSelected ? 'bg-cyan-500 text-white' : 'bg-slate-800 text-cyan-400'
                         }`}>
                           EP {ep.episode_number}
                         </span>
@@ -807,7 +838,7 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
                   className="flex items-center justify-between px-3 py-2 rounded-xl hover:bg-slate-800/80 transition-colors"
                 >
                   <span className="font-medium">Video Quality</span>
-                  <span className="text-rose-400 font-mono font-bold">{currentQuality}</span>
+                  <span className="text-cyan-400 font-mono font-bold">{currentQuality}</span>
                 </button>
 
                 {/* Server Select */}
@@ -816,7 +847,7 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
                   className="flex items-center justify-between px-3 py-2 rounded-xl hover:bg-slate-800/80 transition-colors"
                 >
                   <span className="font-medium">Stream Server</span>
-                  <span className="text-rose-400 font-medium">
+                  <span className="text-cyan-400 font-medium">
                     {selectedServer === 'server1' ? 'Ultra CDN' : selectedServer === 'server2' ? 'HD Backup' : 'Direct'}
                   </span>
                 </button>
@@ -827,7 +858,7 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
                   className="flex items-center justify-between px-3 py-2 rounded-xl hover:bg-slate-800/80 transition-colors"
                 >
                   <span className="font-medium">Speed</span>
-                  <span className="text-rose-400 font-mono">{playbackSpeed}x</span>
+                  <span className="text-cyan-400 font-mono">{playbackSpeed}x</span>
                 </button>
 
                 {/* Subtitles Select */}
@@ -839,7 +870,7 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
                     <Subtitles className="w-3.5 h-3.5 text-slate-400" />
                     <span className="font-medium">Subtitles</span>
                   </div>
-                  <span className="text-rose-400">{activeSubtitle}</span>
+                  <span className="text-cyan-400">{activeSubtitle}</span>
                 </button>
 
                 {/* Audio Select */}
@@ -851,7 +882,7 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
                     <AudioLines className="w-3.5 h-3.5 text-slate-400" />
                     <span className="font-medium">Audio Track</span>
                   </div>
-                  <span className="text-rose-400 truncate max-w-[90px]">{activeAudio}</span>
+                  <span className="text-cyan-400 truncate max-w-[90px]">{activeAudio}</span>
                 </button>
               </div>
             )}
@@ -861,7 +892,7 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
               <div className="flex flex-col gap-1 text-xs">
                 <button
                   onClick={() => setActiveMenuTab('main')}
-                  className="flex items-center gap-1 text-rose-400 px-2 py-1 mb-1 font-semibold hover:underline"
+                  className="flex items-center gap-1 text-cyan-400 px-2 py-1 mb-1 font-semibold hover:underline"
                 >
                   ← Back to Settings
                 </button>
@@ -875,11 +906,11 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
                       setShowSettingsMenu(false);
                     }}
                     className={`flex items-center justify-between px-3 py-2 rounded-xl transition-colors ${
-                      currentQuality === q ? 'bg-rose-500/20 text-rose-300 font-bold border border-rose-500/30' : 'hover:bg-slate-800'
+                      currentQuality === q ? 'bg-cyan-500/20 text-cyan-300 font-bold border border-cyan-500/30' : 'hover:bg-slate-800'
                     }`}
                   >
                     <span className="font-mono">{q}</span>
-                    {currentQuality === q && <Check className="w-3.5 h-3.5 text-rose-400" />}
+                    {currentQuality === q && <Check className="w-3.5 h-3.5 text-cyan-400" />}
                   </button>
                 ))}
               </div>
@@ -890,7 +921,7 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
               <div className="flex flex-col gap-1 text-xs">
                 <button
                   onClick={() => setActiveMenuTab('main')}
-                  className="flex items-center gap-1 text-rose-400 px-2 py-1 mb-1 font-semibold hover:underline"
+                  className="flex items-center gap-1 text-cyan-400 px-2 py-1 mb-1 font-semibold hover:underline"
                 >
                   ← Back to Settings
                 </button>
@@ -905,14 +936,14 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
                       setShowSettingsMenu(false);
                     }}
                     className={`flex items-center justify-between px-3 py-2 rounded-xl transition-colors ${
-                      selectedServer === srv.id ? 'bg-rose-500/20 text-rose-300 font-bold border border-rose-500/30' : 'hover:bg-slate-800'
+                      selectedServer === srv.id ? 'bg-cyan-500/20 text-cyan-300 font-bold border border-cyan-500/30' : 'hover:bg-slate-800'
                     }`}
                   >
                     <div className="flex items-center gap-2">
                       <Server className="w-3.5 h-3.5 text-slate-400" />
                       <span>{srv.name}</span>
                     </div>
-                    <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-800 text-rose-300">
+                    <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-800 text-cyan-300">
                       {srv.tag}
                     </span>
                   </button>
@@ -925,7 +956,7 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
               <div className="flex flex-col gap-1 text-xs">
                 <button
                   onClick={() => setActiveMenuTab('main')}
-                  className="flex items-center gap-1 text-rose-400 px-2 py-1 mb-1 font-semibold hover:underline"
+                  className="flex items-center gap-1 text-cyan-400 px-2 py-1 mb-1 font-semibold hover:underline"
                 >
                   ← Back to Settings
                 </button>
@@ -939,11 +970,11 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
                       setShowSettingsMenu(false);
                     }}
                     className={`flex items-center justify-between px-3 py-2 rounded-xl transition-colors ${
-                      playbackSpeed === spd ? 'bg-rose-500/20 text-rose-300 font-bold border border-rose-500/30' : 'hover:bg-slate-800'
+                      playbackSpeed === spd ? 'bg-cyan-500/20 text-cyan-300 font-bold border border-cyan-500/30' : 'hover:bg-slate-800'
                     }`}
                   >
                     <span>{spd === 1 ? 'Normal (1x)' : `${spd}x`}</span>
-                    {playbackSpeed === spd && <Check className="w-3.5 h-3.5 text-rose-400" />}
+                    {playbackSpeed === spd && <Check className="w-3.5 h-3.5 text-cyan-400" />}
                   </button>
                 ))}
               </div>
@@ -954,7 +985,7 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
               <div className="flex flex-col gap-1 text-xs">
                 <button
                   onClick={() => setActiveMenuTab('main')}
-                  className="flex items-center gap-1 text-rose-400 px-2 py-1 mb-1 font-semibold hover:underline"
+                  className="flex items-center gap-1 text-cyan-400 px-2 py-1 mb-1 font-semibold hover:underline"
                 >
                   ← Back to Settings
                 </button>
@@ -967,11 +998,11 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
                       setShowSettingsMenu(false);
                     }}
                     className={`flex items-center justify-between px-3 py-2 rounded-xl transition-colors ${
-                      activeSubtitle === sub ? 'bg-rose-500/20 text-rose-300 font-bold border border-rose-500/30' : 'hover:bg-slate-800'
+                      activeSubtitle === sub ? 'bg-cyan-500/20 text-cyan-300 font-bold border border-cyan-500/30' : 'hover:bg-slate-800'
                     }`}
                   >
                     <span>{sub}</span>
-                    {activeSubtitle === sub && <Check className="w-3.5 h-3.5 text-rose-400" />}
+                    {activeSubtitle === sub && <Check className="w-3.5 h-3.5 text-cyan-400" />}
                   </button>
                 ))}
               </div>
@@ -982,7 +1013,7 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
               <div className="flex flex-col gap-1 text-xs">
                 <button
                   onClick={() => setActiveMenuTab('main')}
-                  className="flex items-center gap-1 text-rose-400 px-2 py-1 mb-1 font-semibold hover:underline"
+                  className="flex items-center gap-1 text-cyan-400 px-2 py-1 mb-1 font-semibold hover:underline"
                 >
                   ← Back to Settings
                 </button>
@@ -995,11 +1026,11 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
                       setShowSettingsMenu(false);
                     }}
                     className={`flex items-center justify-between px-3 py-2 rounded-xl transition-colors ${
-                      activeAudio === aud ? 'bg-rose-500/20 text-rose-300 font-bold border border-rose-500/30' : 'hover:bg-slate-800'
+                      activeAudio === aud ? 'bg-cyan-500/20 text-cyan-300 font-bold border border-cyan-500/30' : 'hover:bg-slate-800'
                     }`}
                   >
                     <span>{aud}</span>
-                    {activeAudio === aud && <Check className="w-3.5 h-3.5 text-rose-400" />}
+                    {activeAudio === aud && <Check className="w-3.5 h-3.5 text-cyan-400" />}
                   </button>
                 ))}
               </div>
