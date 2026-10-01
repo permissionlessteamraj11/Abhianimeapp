@@ -826,13 +826,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({ onClose, onRefreshCatalo
                         <span>Refresh</span>
                       </button>
 
-                      <button
-                        onClick={handleLoadSampleLibrary}
-                        className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-xs font-bold text-white shadow-md shadow-cyan-500/20 flex items-center gap-1.5 transition-transform active:scale-95"
-                      >
-                        <Sparkles className="w-3.5 h-3.5" />
-                        <span>Load Sample Catalog</span>
-                      </button>
+
                     </div>
                   </div>
 
@@ -1228,7 +1222,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({ onClose, onRefreshCatalo
                   <div className="grid grid-cols-1 gap-4">
                     {animeList.length === 0 ? (
                       <div className="p-8 text-center bg-slate-900/40 rounded-2xl border border-slate-800 text-xs text-slate-400">
-                        No anime series in catalog yet. Click "+ Add Anime" to create one or load the sample catalog in Overview.
+                        No anime series in catalog yet. Click "+ Add Anime" to add your first anime series.
                       </div>
                     ) : (
                       animeList.map((anime) => {
