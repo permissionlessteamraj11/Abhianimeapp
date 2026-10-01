@@ -63,18 +63,22 @@ async function handleUpdate(update) {
 
   if (text.startsWith('/start')) {
     await sendTelegramMessage(chatId, `
-⚡ *Stark Anime - Episode Upload Bot (Local Node Engine)*
+⚡ *Stark Anime - Episode & Video Upload Bot*
 
-Welcome! Is bot se aap Anime Series, Seasons aur Episodes upload kar sakte ho.
+Welcome! Is bot se aap Anime Series, Seasons aur Episodes direct upload & control kar sakte ho. Multi-quality (480p, 720p, 1080p) videos control ho jayengi.
 
-*Commands:*
-• \`/addanime <Title>\` - Create new Anime
-• \`/listanime\` - List Anime Series
-• \`/status\` - Database status
+*Main Commands:*
+• \`/addanime <Title>\` - Naya Anime banayein
+• \`/listanime\` - Sabhi Anime series list karein with IDs
+• \`/editanime <anime_id> <field> <value>\` - Anime detail edit karein
+• \`/editepisode <anime_id> <season_num> <ep_num> <field> <value>\` - Episode edit karein
+• \`/forward <anime_id> <season_num> <ep_num>\` - Episode videos bot chat me mangwaye
+• \`/status\` - Storage & database stats
 
-*Upload Video:*
-Video bhejte waqt caption me likhein:
-\`/ep <anime_id> <season_num> <ep_num> <Episode Title>\`
+*Video Uploading / Forwarding:*
+Kisi bhi 480p, 720p, 1080p video ko bot me bhejien/forward karein aur caption me likhein:
+\`/ep <anime_id> <season_num> <ep_num> <quality> <Episode Title>\`
+_Example:_ \`/ep anime_12345 1 1 1080p Episode 1 The Beginning\`
     `);
     return;
   }
@@ -90,9 +94,9 @@ Video bhejte waqt caption me likhein:
 
     await sendTelegramMessage(chatId, `
 📊 *Stark Anime Storage Status*
-• Anime Series: *${db.anime?.length || 0}*
-• Movies: *${db.movies?.length || 0}*
-• Episodes: *${totalEps}*
+• Total Anime: *${db.anime?.length || 0}*
+• Total Movies: *${db.movies?.length || 0}*
+• Total Episodes: *${totalEps}*
 • Database Version: *v${db.version || 1}*
     `);
     return;
@@ -146,12 +150,13 @@ Video bhejte waqt caption me likhein:
     saveDb(db);
 
     await sendTelegramMessage(chatId, `
-✅ *Anime Series Created!*
+✅ *Anime Created Successfully!*
 • Title: *${title}*
 • Anime ID: \`${animeId}\`
+• Default Season: \`Season 1\`
 
-Now upload video files with caption:
-\`/ep ${animeId} 1 1 Episode 1 Title\`
+Video bhejien aur caption:
+\`/ep ${animeId} 1 1 1080p Episode 1 Title\`
     `);
     return;
   }
@@ -164,13 +169,156 @@ Now upload video files with caption:
       return;
     }
 
-    let out = "📺 *Anime List:*\n\n";
-    animeList.forEach((a, i) => {
+    let msgText = "📺 *Anime Catalog List:*\n\n";
+    animeList.forEach((a, idx) => {
       const epCount = a.seasons?.reduce((acc, s) => acc + (s.episodes?.length || 0), 0) || 0;
-      out += `${i + 1}. *${a.title}*\n   • ID: \`${a.id}\`\n   • Episodes: ${epCount}\n\n`;
+      msgText += `${idx + 1}. *${a.title}*\n   • ID: \`${a.id}\`\n   • Seasons: ${a.seasons?.length || 0} | Episodes: ${epCount}\n\n`;
     });
 
-    await sendTelegramMessage(chatId, out);
+    await sendTelegramMessage(chatId, msgText);
+    return;
+  }
+
+  if (text.startsWith('/editanime')) {
+    const parts = text.split(' ');
+    parts.shift();
+    if (parts.length < 3) {
+      await sendTelegramMessage(chatId, "❌ Usage: `/editanime <anime_id> <title|description|poster_url|status> <value>`");
+      return;
+    }
+
+    const animeId = parts[0];
+    const field = parts[1].toLowerCase();
+    const value = parts.slice(2).join(' ');
+
+    const db = loadDb();
+    const anime = (db.anime || []).find(a => a.id === animeId);
+
+    if (!anime) {
+      await sendTelegramMessage(chatId, `❌ Anime ID \`${animeId}\` not found! Use \`/listanime\`.`);
+      return;
+    }
+
+    if (field === 'title') {
+      anime.title = value;
+      anime.slug = value.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+    } else if (field === 'description') {
+      anime.description = value;
+    } else if (field === 'poster_url' || field === 'poster') {
+      anime.poster_url = value;
+    } else if (field === 'status') {
+      anime.status = value;
+    } else {
+      await sendTelegramMessage(chatId, "❌ Valid fields: `title`, `description`, `poster_url`, `status`");
+      return;
+    }
+
+    saveDb(db);
+    await sendTelegramMessage(chatId, `✅ *Anime Updated!* Field *${field}* set to: ${value}`);
+    return;
+  }
+
+  if (text.startsWith('/editepisode')) {
+    const parts = text.split(' ');
+    parts.shift();
+    if (parts.length < 5) {
+      await sendTelegramMessage(chatId, "❌ Usage: `/editepisode <anime_id> <season_num> <ep_num> <title|description> <value>`");
+      return;
+    }
+
+    const animeId = parts[0];
+    const seasonNum = parseInt(parts[1]) || 1;
+    const epNum = parseInt(parts[2]) || 1;
+    const field = parts[3].toLowerCase();
+    const value = parts.slice(4).join(' ');
+
+    const db = loadDb();
+    const anime = (db.anime || []).find(a => a.id === animeId);
+    const season = anime?.seasons?.find(s => s.season_number === seasonNum);
+    const episode = season?.episodes?.find(e => e.episode_number === epNum);
+
+    if (!episode) {
+      await sendTelegramMessage(chatId, `❌ Episode not found for Anime \`${animeId}\` S${seasonNum} E${epNum}`);
+      return;
+    }
+
+    if (field === 'title') {
+      episode.title = value;
+    } else if (field === 'description') {
+      episode.description = value;
+    } else {
+      await sendTelegramMessage(chatId, "❌ Valid fields: `title`, `description`");
+      return;
+    }
+
+    saveDb(db);
+    await sendTelegramMessage(chatId, `✅ *Episode S${seasonNum} E${epNum} Updated!* ${field} = ${value}`);
+    return;
+  }
+
+  if (text.startsWith('/forward')) {
+    const parts = text.split(' ');
+    parts.shift();
+    if (parts.length < 3) {
+      await sendTelegramMessage(chatId, "❌ Usage: `/forward <anime_id> <season_num> <ep_num>`");
+      return;
+    }
+
+    const animeId = parts[0];
+    const seasonNum = parseInt(parts[1]) || 1;
+    const epNum = parseInt(parts[2]) || 1;
+
+    const db = loadDb();
+    const anime = (db.anime || []).find(a => a.id === animeId);
+    const season = anime?.seasons?.find(s => s.season_number === seasonNum);
+    const episode = season?.episodes?.find(e => e.episode_number === epNum);
+
+    if (!episode) {
+      await sendTelegramMessage(chatId, `❌ Episode S${seasonNum} E${epNum} not found for Anime \`${animeId}\`.`);
+      return;
+    }
+
+    let forwardMsg = `🎬 *${anime.title}* - Season ${seasonNum} Episode ${epNum}\n• Title: *${episode.title}*\n\n*Available Video Qualities & Streams:*\n`;
+
+    if (episode.video_assets && episode.video_assets.length > 0) {
+      episode.video_assets.forEach(va => {
+        forwardMsg += `• *${va.quality}*: [Stream Link](${va.stream_url})\n`;
+      });
+    } else if (episode.stream_url) {
+      forwardMsg += `• *Default (${episode.quality || '1080p'})*: [Stream Link](${episode.stream_url})\n`;
+    }
+
+    await sendTelegramMessage(chatId, forwardMsg);
+
+    if (episode.video_assets && episode.video_assets.length > 0) {
+      for (const va of episode.video_assets) {
+        if (va.telegram_file_id) {
+          try {
+            await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendVideo`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                chat_id: chatId,
+                video: va.telegram_file_id,
+                caption: `📹 *${anime.title}* S${seasonNum} E${epNum} (${va.quality})`
+              })
+            });
+          } catch {}
+        }
+      }
+    } else if (episode.telegram_file_id) {
+      try {
+        await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendVideo`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            chat_id: chatId,
+            video: episode.telegram_file_id,
+            caption: `📹 *${anime.title}* S${seasonNum} E${epNum}`
+          })
+        });
+      } catch {}
+    }
     return;
   }
 
@@ -183,14 +331,23 @@ Now upload video files with caption:
       const parts = text.split(' ');
       parts.shift();
       if (parts.length < 3) {
-        await sendTelegramMessage(chatId, "❌ Caption format: `/ep <anime_id> <season_num> <ep_num> <Episode Title>`");
+        await sendTelegramMessage(chatId, "❌ Caption format: `/ep <anime_id> <season_num> <ep_num> [480p|720p|1080p] <Episode Title>`");
         return;
       }
 
       const animeId = parts[0];
       const seasonNum = parseInt(parts[1]) || 1;
       const epNum = parseInt(parts[2]) || 1;
-      const epTitle = parts.slice(3).join(' ') || `Episode ${epNum}`;
+
+      let quality = '1080p';
+      let titleStartIdx = 3;
+
+      if (parts[3] && ['480p', '720p', '1080p', '360p', '4k'].includes(parts[3].toLowerCase())) {
+        quality = parts[3];
+        titleStartIdx = 4;
+      }
+
+      const epTitle = parts.slice(titleStartIdx).join(' ') || `Episode ${epNum}`;
 
       const db = loadDb();
       const anime = (db.anime || []).find(a => a.id === animeId);
@@ -216,37 +373,68 @@ Now upload video files with caption:
       }
 
       season.episodes = season.episodes || [];
-      const epId = `ep_${seasonNum}_${epNum}_${Date.now()}`;
-      const newEpisode = {
-        id: epId,
-        anime_id: animeId,
-        season_id: season.id,
-        episode_number: epNum,
-        title: epTitle,
-        description: `${anime.title} S${seasonNum} E${epNum}`,
-        duration_seconds: file.duration || 1440,
-        thumbnail_url: anime.poster_url,
+      let episode = season.episodes.find(e => e.episode_number === epNum);
+
+      if (!episode) {
+        episode = {
+          id: `ep_${seasonNum}_${epNum}_${Date.now()}`,
+          anime_id: animeId,
+          season_id: season.id,
+          episode_number: epNum,
+          title: epTitle,
+          description: `${anime.title} S${seasonNum} E${epNum}`,
+          duration_seconds: file.duration || 1440,
+          thumbnail_url: anime.poster_url,
+          stream_url: streamUrl,
+          telegram_file_id: fileId,
+          quality: quality,
+          view_count: 0,
+          is_published: true,
+          distribution_rights_confirmed: true,
+          video_assets: []
+        };
+        season.episodes.push(episode);
+      } else {
+        episode.title = epTitle || episode.title;
+      }
+
+      episode.video_assets = episode.video_assets || [];
+      const assetIdx = episode.video_assets.findIndex(va => va.quality === quality);
+      const newAsset = {
+        id: `va_${quality}_${Date.now()}`,
+        parent_type: 'episode',
+        parent_id: episode.id,
+        quality: quality,
+        storage_key: fileId,
         stream_url: streamUrl,
         telegram_file_id: fileId,
-        view_count: 0,
-        is_published: true,
-        distribution_rights_confirmed: true
+        duration_seconds: file.duration || 1440,
+        file_size_bytes: file.file_size || 0
       };
 
-      const existingIdx = season.episodes.findIndex(e => e.episode_number === epNum);
-      if (existingIdx >= 0) {
-        season.episodes[existingIdx] = newEpisode;
+      if (assetIdx >= 0) {
+        episode.video_assets[assetIdx] = newAsset;
       } else {
-        season.episodes.push(newEpisode);
+        episode.video_assets.push(newAsset);
+      }
+
+      if (quality === '1080p' || !episode.stream_url) {
+        episode.stream_url = streamUrl;
+        episode.telegram_file_id = fileId;
+        episode.quality = quality;
       }
 
       saveDb(db);
 
       await sendTelegramMessage(chatId, `
-🎉 *Episode Uploaded Successfully!*
+🎉 *Episode (${quality}) Uploaded Successfully!*
 • Anime: *${anime.title}*
-• Season ${seasonNum} | Episode ${epNum}: *${epTitle}*
+• Season ${seasonNum} | Episode ${epNum}: *${episode.title}*
+• Quality Added: *${quality}*
 • Episode live on website!
+
+Video forward karne ke liye command send karein:
+\`/forward ${animeId} ${seasonNum} ${epNum}\`
       `);
       return;
     }
@@ -254,7 +442,7 @@ Now upload video files with caption:
     await sendTelegramMessage(chatId, `
 📹 *Video File Received!*
 To attach to anime, reply with caption:
-\`/ep <anime_id> <season_num> <ep_num> <Episode Title>\`
+\`/ep <anime_id> <season_num> <ep_num> [480p|720p|1080p] <Episode Title>\`
     `);
     return;
   }
