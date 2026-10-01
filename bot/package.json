@@ -1,0 +1,16 @@
+{
+  "name": "stark-anime-telegram-bot",
+  "version": "1.0.0",
+  "description": "Telegram Bot for Stark Anime Episode Uploads & Cloudflare Workers Storage",
+  "main": "worker.js",
+  "type": "module",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "wrangler": "^3.100.0"
+  }
+}

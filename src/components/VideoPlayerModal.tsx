@@ -28,8 +28,6 @@ import {
   Unlock,
   ThumbsUp,
   ThumbsDown,
-  Download,
-  Share2,
   Bookmark,
   Flag,
   MoreHorizontal,
@@ -38,6 +36,7 @@ import {
   Smile,
   Sparkles,
   ChevronDown,
+  ChevronUp,
   Clock,
   HardDrive,
   Film,
@@ -65,88 +64,7 @@ const SERVER_OPTIONS: { id: StreamServer; name: string; tag: string }[] = [
 const EMOJI_OPTIONS = ['🔥', '❤️', '👏', '😱', '🍿', '💯', '😍', '🚀'];
 
 // Initial seed comments for realistic community engagement
-const INITIAL_SEED_COMMENTS: Comment[] = [
-  {
-    id: 'c-1',
-    content_id: 'default',
-    user_id: 'u-101',
-    username: 'KuroSamurai',
-    user_avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=120&q=80',
-    badge: 'VIP',
-    text: 'This episode was absolute peak animation! The fight choreography in the second half left me speechless. 10/10 masterwork! 🔥',
-    created_at: '2 hours ago',
-    likes_count: 142,
-    is_liked: true,
-    replies_count: 2,
-    is_expanded: false,
-    replies: [
-      {
-        id: 'r-101',
-        comment_id: 'c-1',
-        user_id: 'u-102',
-        username: 'AnimeOtaku_99',
-        user_avatar: 'https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?auto=format&fit=crop&w=120&q=80',
-        badge: 'Subscriber',
-        text: 'Agreed! The sound design during the final climax gave me goosebumps!',
-        created_at: '1 hour ago',
-        likes_count: 28,
-        is_liked: false
-      },
-      {
-        id: 'r-102',
-        comment_id: 'c-1',
-        user_id: 'u-103',
-        username: 'CyberNinja',
-        user_avatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=120&q=80',
-        text: 'Can’t wait for next week’s episode! Stark Anime audio quality is so crisp.',
-        created_at: '45 mins ago',
-        likes_count: 12,
-        is_liked: false
-      }
-    ]
-  },
-  {
-    id: 'c-2',
-    content_id: 'default',
-    user_id: 'u-104',
-    username: 'ZenithWalker',
-    user_avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=120&q=80',
-    badge: 'Moderator',
-    text: 'For anyone wondering about the soundtrack at 14:20, it’s the official main theme remix. Loving the 1080p 60fps stream clarity!',
-    created_at: '5 hours ago',
-    likes_count: 89,
-    is_liked: false,
-    replies_count: 1,
-    is_expanded: false,
-    replies: [
-      {
-        id: 'r-103',
-        comment_id: 'c-2',
-        user_id: 'u-105',
-        username: 'Shinobi_X',
-        user_avatar: 'https://images.unsplash.com/photo-1522075469751-3a6694fb2f61?auto=format&fit=crop&w=120&q=80',
-        text: 'Thanks for the time-stamp bro! Needed that song badly.',
-        created_at: '3 hours ago',
-        likes_count: 19,
-        is_liked: false
-      }
-    ]
-  },
-  {
-    id: 'c-3',
-    content_id: 'default',
-    user_id: 'u-106',
-    username: 'Luna_Eclipse',
-    user_avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=120&q=80',
-    badge: 'Subscriber',
-    text: 'The character development in this season is top tier. Hindi audio dubbing is surprisingly awesome too! 🍿',
-    created_at: '1 day ago',
-    likes_count: 54,
-    is_liked: false,
-    replies_count: 0,
-    replies: []
-  }
-];
+const INITIAL_SEED_COMMENTS: Comment[] = [];
 
 export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
   content,
@@ -191,7 +109,6 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
   // Modals & Selectors
   const [showSettingsMenu, setShowSettingsMenu] = useState<boolean>(false);
   const [showEpisodeDrawer, setShowEpisodeDrawer] = useState<boolean>(false);
-  const [showDownloadModal, setShowDownloadModal] = useState<boolean>(false);
   const [showReportModal, setShowReportModal] = useState<boolean>(false);
   const [showMoreActionsMenu, setShowMoreActionsMenu] = useState<boolean>(false);
   const [activeMenuTab, setActiveMenuTab] = useState<'main' | 'quality' | 'speed' | 'subtitles' | 'audio' | 'server'>('main');
@@ -219,6 +136,7 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
   const [showFullDescription, setShowFullDescription] = useState<boolean>(false);
 
   // Comments state
+  const [isCommentsOpen, setIsCommentsOpen] = useState<boolean>(false);
   const [comments, setComments] = useState<Comment[]>(INITIAL_SEED_COMMENTS);
   const [newCommentText, setNewCommentText] = useState<string>('');
   const [replyingTo, setReplyingTo] = useState<{ commentId: string; username: string } | null>(null);
@@ -629,19 +547,6 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
     }
   };
 
-  const handleShare = () => {
-    haptic.selection();
-    if (navigator.share) {
-      navigator.share({
-        title: content.title,
-        text: `Watch ${content.title} on Stark Anime!`,
-        url: window.location.href
-      }).catch(() => {});
-    } else {
-      navigator.clipboard.writeText(window.location.href);
-      triggerToast('Link copied to clipboard!');
-    }
-  };
 
   // Comment Handlers
   const handlePostComment = () => {
@@ -1448,24 +1353,6 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
             <span>{dislikesCount}</span>
           </button>
 
-          {/* Download */}
-          <button
-            onClick={() => setShowDownloadModal(true)}
-            className="px-3.5 py-2 rounded-xl bg-slate-900/80 hover:bg-slate-850 border border-slate-800 text-slate-300 text-xs font-semibold flex items-center gap-1.5 transition-all shrink-0 active:scale-95"
-          >
-            <Download className="w-4 h-4 text-cyan-400" />
-            <span>Download</span>
-          </button>
-
-          {/* Share */}
-          <button
-            onClick={handleShare}
-            className="px-3.5 py-2 rounded-xl bg-slate-900/80 hover:bg-slate-850 border border-slate-800 text-slate-300 text-xs font-semibold flex items-center gap-1.5 transition-all shrink-0 active:scale-95"
-          >
-            <Share2 className="w-4 h-4 text-cyan-400" />
-            <span>Share</span>
-          </button>
-
           {/* Add to Watchlist */}
           <button
             onClick={handleToggleWatchlist}
@@ -1497,40 +1384,6 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
             <MoreHorizontal className="w-4 h-4" />
           </button>
         </div>
-
-        {/* DOWNLOAD MODAL SHEET */}
-        {showDownloadModal && (
-          <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-end sm:items-center justify-center p-4">
-            <div className="w-full max-w-sm bg-slate-900 border border-slate-800 rounded-3xl p-5 shadow-2xl flex flex-col gap-3 animate-in fade-in zoom-in-95">
-              <div className="flex items-center justify-between pb-2 border-b border-slate-800">
-                <div className="flex items-center gap-2">
-                  <Download className="w-5 h-5 text-cyan-400" />
-                  <h3 className="font-bold text-sm text-white">Download Episode</h3>
-                </div>
-                <button onClick={() => setShowDownloadModal(false)} className="text-slate-400 hover:text-white">
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-
-              <span className="text-xs text-slate-400">Select preferred video download quality:</span>
-
-              {['1080p FHD (850 MB)', '720p HD (420 MB)', '480p SD (210 MB)'].map((opt, i) => (
-                <button
-                  key={i}
-                  onClick={() => {
-                    haptic.notification('success');
-                    setShowDownloadModal(false);
-                    triggerToast(`Download started: ${opt.split(' ')[0]}`);
-                  }}
-                  className="w-full p-3 rounded-xl bg-slate-800 hover:bg-slate-750 border border-slate-700/60 text-left flex items-center justify-between text-xs text-slate-200 font-semibold"
-                >
-                  <span>{opt}</span>
-                  <span className="text-cyan-400 text-[10px] uppercase font-mono">Download ↓</span>
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
 
         {/* REPORT MODAL SHEET */}
         {showReportModal && (
@@ -1592,23 +1445,37 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
         )}
 
         {/* =====================================================================
-            4. COMMENTS SECTION
+            4. COMMENTS SECTION (COLLAPSIBLE / ACCORDION)
             ===================================================================== */}
-        <div className="flex flex-col gap-3 mt-2">
-          {/* Comments Header */}
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
+        <div className="flex flex-col gap-3 mt-2 border-t border-slate-800/80 pt-3">
+          {/* Comments Header Bar - Click to open/close */}
+          <button
+            type="button"
+            onClick={() => {
+              haptic.impact("light");
+              setIsCommentsOpen(!isCommentsOpen);
+            }}
+            className="w-full flex items-center justify-between p-3 rounded-2xl bg-slate-900/90 hover:bg-slate-850 border border-slate-800 transition-all active:scale-[0.99]"
+          >
+            <div className="flex items-center gap-2.5">
               <MessageSquare className="w-4 h-4 text-cyan-400" />
-              <h2 className="text-sm font-bold text-white uppercase tracking-wider">
+              <h2 className="text-xs sm:text-sm font-bold text-white uppercase tracking-wider">
                 Comments
               </h2>
               <span className="text-xs font-mono font-bold text-cyan-400 bg-cyan-950/80 border border-cyan-800/40 px-2 py-0.5 rounded-full">
                 {comments.reduce((acc, c) => acc + 1 + (c.replies?.length || 0), 0)}
               </span>
             </div>
-          </div>
+            <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-400">
+              <span>{isCommentsOpen ? "Tap to close" : "Tap to open comments"}</span>
+              {isCommentsOpen ? <ChevronUp className="w-4 h-4 text-cyan-400" /> : <ChevronDown className="w-4 h-4 text-cyan-400" />}
+            </div>
+          </button>
 
-          {/* Comment Input */}
+          {/* Collapsible Comments Content */}
+          {isCommentsOpen && (
+            <div className="flex flex-col gap-3 animate-in fade-in zoom-in-98 duration-200">
+              {/* Comment Input */}
           <div className="p-3 rounded-2xl bg-slate-900/80 border border-slate-800 flex flex-col gap-2">
             {replyingTo && (
               <div className="flex items-center justify-between px-2 py-1 rounded-lg bg-cyan-950/60 border border-cyan-800/40 text-[11px] text-cyan-300">
@@ -1811,6 +1678,8 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
                   Load More Comments
                 </button>
               )}
+            </div>
+          )}
             </div>
           )}
         </div>
