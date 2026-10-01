@@ -208,28 +208,63 @@ app.get('/api/home', (req: Request, res: Response) => {
   const heroBanners = db.getAllHeroBanners();
   const categories = db.getAllCategories();
 
-  // Populate homepage section items
+  // Populate homepage section items with placement priorities
   const populatedSections = homepageSections
     .filter((sec: any) => sec.is_enabled)
     .sort((a: any, b: any) => (a.display_order || 0) - (b.display_order || 0))
     .map((sec: any) => {
       let items: any[] = [];
+      const pool = [...allAnime, ...allMovies].filter((item) => item.is_published !== false);
+
+      // 1. Explicitly placed items: matching section_id or placement keyword
+      const explicit = pool.filter((item) => {
+        if (item.section_ids && Array.isArray(item.section_ids) && item.section_ids.includes(sec.id)) return true;
+        if (item.placements && Array.isArray(item.placements)) {
+          if (item.placements.includes(sec.section_type) || item.placements.includes(sec.id)) return true;
+          if (sec.section_type === 'new_episodes' && item.placements.includes('new_episodes')) return true;
+          if (sec.section_type === 'trending' && (item.placements.includes('trending') || item.placements.includes('top_rated'))) return true;
+          if (sec.section_type === 'popular_movies' && item.placements.includes('popular_movies')) return true;
+        }
+        return false;
+      });
+
+      // 2. Automatic matching based on section type
+      let autoMatches: any[] = [];
       if (sec.section_type === 'new_episodes') {
-        items = [...allAnime].filter((a) => a.is_published !== false).slice(0, sec.max_items);
+        autoMatches = [...allAnime]
+          .filter((a) => a.is_published !== false)
+          .sort((a, b) => new Date(b.updated_at || b.created_at || 0).getTime() - new Date(a.updated_at || a.created_at || 0).getTime());
       } else if (sec.section_type === 'trending') {
-        items = [...allAnime, ...allMovies]
-          .filter((item) => item.is_published !== false)
-          .sort((a, b) => (b.view_count || 0) - (a.view_count || 0))
-          .slice(0, sec.max_items);
+        autoMatches = [...pool]
+          .sort((a, b) => {
+            const viewsDiff = (b.view_count || 0) - (a.view_count || 0);
+            if (viewsDiff !== 0) return viewsDiff;
+            return new Date(b.updated_at || b.created_at || 0).getTime() - new Date(a.updated_at || a.created_at || 0).getTime();
+          });
       } else if (sec.section_type === 'popular_movies') {
-        items = [...allMovies].filter((m) => m.is_published !== false).slice(0, sec.max_items);
+        autoMatches = [...allMovies]
+          .filter((m) => m.is_published !== false)
+          .sort((a, b) => new Date(b.updated_at || b.created_at || 0).getTime() - new Date(a.updated_at || a.created_at || 0).getTime());
       } else if (sec.section_type === 'genre_curated') {
-        items = [...allAnime, ...allMovies]
-          .filter((item) => item.is_published !== false && (item.genres?.includes('Action') || item.genres?.includes('Sci-Fi')))
-          .slice(0, sec.max_items);
+        const targetGenre = (sec.genre_id || 'Action').toLowerCase();
+        autoMatches = pool.filter((item) =>
+          item.genres?.some((g: string) => g.toLowerCase() === targetGenre || g.toLowerCase().includes(targetGenre))
+        );
       } else {
-        items = [...allAnime, ...allMovies].filter((item) => item.is_published !== false).slice(0, sec.max_items);
+        autoMatches = [...pool].sort((a, b) => new Date(b.updated_at || b.created_at || 0).getTime() - new Date(a.updated_at || a.created_at || 0).getTime());
       }
+
+      // Combine explicit + auto matches without duplicates
+      const seen = new Set<string>();
+      items = [];
+      for (const item of [...explicit, ...autoMatches]) {
+        if (!seen.has(item.id)) {
+          seen.add(item.id);
+          items.push(item);
+        }
+        if (items.length >= (sec.max_items || 8)) break;
+      }
+
       return { ...sec, items };
     });
 
@@ -889,7 +924,13 @@ async function startServer() {
   });
 }
 
-startServer().catch((err) => {
-  console.error('Failed to start Stark Anime server:', err);
-  process.exit(1);
-});
+// Export Express app for Vercel Serverless Functions (/api/index.ts)
+export default app;
+
+// Only spin up dev/standalone server when not in Vercel serverless environment
+if (!process.env.VERCEL && !process.env.AWS_LAMBDA_FUNCTION_NAME) {
+  startServer().catch((err) => {
+    console.error('Failed to start Stark Anime server:', err);
+    process.exit(1);
+  });
+}

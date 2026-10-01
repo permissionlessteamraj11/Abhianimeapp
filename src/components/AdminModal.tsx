@@ -64,6 +64,12 @@ type AdminTab =
   | 'audit'
   | 'settings';
 
+export const POPULAR_GENRES = [
+  'Action', 'Adventure', 'Comedy', 'Cyberpunk', 'Drama', 'Fantasy',
+  'Horror', 'Isekai', 'Mecha', 'Mystery', 'Romance', 'Sci-Fi',
+  'Seinen', 'Shounen', 'Slice of Life', 'Sports', 'Supernatural', 'Thriller'
+];
+
 export const AdminModal: React.FC<AdminModalProps> = ({ onClose, onRefreshCatalog }) => {
   const [isLoggedIn, setIsLoggedIn] = useState(api.isAdminLoggedIn());
   const [username, setUsername] = useState('');
@@ -88,6 +94,10 @@ export const AdminModal: React.FC<AdminModalProps> = ({ onClose, onRefreshCatalo
   const [auditLogs, setAuditLogs] = useState<AdminAuditLog[]>([]);
   const [appSettings, setAppSettings] = useState<AppSettings | null>(null);
   const [searchUserQuery, setSearchUserQuery] = useState('');
+
+  // Genre and placement input helpers
+  const [customGenreInput, setCustomGenreInput] = useState('');
+  const [customMovieGenreInput, setCustomMovieGenreInput] = useState('');
 
   // Form states for creating/editing anime
   const [editingAnime, setEditingAnime] = useState<Partial<Anime> | null>(null);
@@ -237,6 +247,9 @@ export const AdminModal: React.FC<AdminModalProps> = ({ onClose, onRefreshCatalo
     try {
       await api.adminSaveAnime({
         ...editingAnime,
+        genres: editingAnime.genres && editingAnime.genres.length > 0 ? editingAnime.genres : ['Action'],
+        placements: editingAnime.placements && editingAnime.placements.length > 0 ? editingAnime.placements : ['new_episodes', 'trending'],
+        section_ids: editingAnime.section_ids || [],
         distribution_rights_confirmed: true,
         is_published: editingAnime.is_published !== false
       });
@@ -276,6 +289,9 @@ export const AdminModal: React.FC<AdminModalProps> = ({ onClose, onRefreshCatalo
     try {
       await api.adminSaveMovie({
         ...editingMovie,
+        genres: editingMovie.genres && editingMovie.genres.length > 0 ? editingMovie.genres : ['Action'],
+        placements: editingMovie.placements && editingMovie.placements.length > 0 ? editingMovie.placements : ['popular_movies', 'trending'],
+        section_ids: editingMovie.section_ids || [],
         distribution_rights_confirmed: true,
         is_published: editingMovie.is_published !== false
       });
@@ -1038,17 +1054,169 @@ export const AdminModal: React.FC<AdminModalProps> = ({ onClose, onRefreshCatalo
                         />
                       </div>
 
+                      {/* Genre Selection (Genre Chunie) */}
+                      <div className="p-3 rounded-xl bg-slate-950/80 border border-slate-800">
+                        <div className="flex items-center justify-between mb-2">
+                          <label className="text-[11px] font-bold text-rose-400 uppercase tracking-wider flex items-center gap-1.5">
+                            <span>🎭 Select Genres / Genre Chunie</span>
+                          </label>
+                          <span className="text-[10px] text-slate-400">
+                            {editingAnime.genres?.length || 0} selected
+                          </span>
+                        </div>
+                        <div className="flex flex-wrap gap-1.5 mb-2.5">
+                          {POPULAR_GENRES.map((g) => {
+                            const isSelected = editingAnime.genres?.includes(g);
+                            return (
+                              <button
+                                key={g}
+                                type="button"
+                                onClick={() => {
+                                  const cur = editingAnime.genres || [];
+                                  const updated = isSelected ? cur.filter((x) => x !== g) : [...cur, g];
+                                  setEditingAnime({ ...editingAnime, genres: updated });
+                                }}
+                                className={`px-2.5 py-1 rounded-lg text-[11px] font-medium transition-all flex items-center gap-1 border ${
+                                  isSelected
+                                    ? 'bg-rose-600 text-white border-rose-500 shadow-sm shadow-rose-600/30 font-bold'
+                                    : 'bg-slate-900 hover:bg-slate-800 text-slate-300 border-slate-800'
+                                }`}
+                              >
+                                {isSelected && <Check className="w-3 h-3" />}
+                                <span>{g}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                        {/* Custom Genre input */}
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="text"
+                            placeholder="Add custom genre (e.g. Dark Fantasy)..."
+                            value={customGenreInput}
+                            onChange={(e) => setCustomGenreInput(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault();
+                                const val = customGenreInput.trim();
+                                if (val) {
+                                  const cur = editingAnime.genres || [];
+                                  if (!cur.includes(val)) {
+                                    setEditingAnime({ ...editingAnime, genres: [...cur, val] });
+                                  }
+                                  setCustomGenreInput('');
+                                }
+                              }
+                            }}
+                            className="h-8 px-2.5 bg-slate-900 border border-slate-800 rounded-lg text-xs text-white placeholder-slate-500 grow"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const val = customGenreInput.trim();
+                              if (val) {
+                                const cur = editingAnime.genres || [];
+                                if (!cur.includes(val)) {
+                                  setEditingAnime({ ...editingAnime, genres: [...cur, val] });
+                                }
+                                setCustomGenreInput('');
+                              }
+                            }}
+                            className="h-8 px-3 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold"
+                          >
+                            + Add Genre
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Placement Selection (Kisme Dalna Hai) */}
+                      <div className="p-3 rounded-xl bg-slate-950/80 border border-rose-900/30">
+                        <div className="flex items-center justify-between mb-2">
+                          <label className="text-[11px] font-bold text-rose-400 uppercase tracking-wider flex items-center gap-1.5">
+                            <span>📌 Show In / Kisme Dalna Hai (Placement)</span>
+                          </label>
+                          <span className="text-[10px] text-slate-400">Where this content will appear</span>
+                        </div>
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-2.5">
+                          {[
+                            { key: 'hero', label: '🌟 Top Hero Slider', desc: 'Sabse upar banner me' },
+                            { key: 'new_episodes', label: '⚡ New Episodes', desc: 'Naye episodes row me' },
+                            { key: 'trending', label: '🔥 Trending Now', desc: 'Trending section me' },
+                            { key: 'top_rated', label: '🏆 Top Rated', desc: 'Top rated showcase' }
+                          ].map((plc) => {
+                            const isSelected = editingAnime.placements?.includes(plc.key);
+                            return (
+                              <button
+                                key={plc.key}
+                                type="button"
+                                onClick={() => {
+                                  const cur = editingAnime.placements || [];
+                                  const updated = isSelected ? cur.filter((x) => x !== plc.key) : [...cur, plc.key];
+                                  setEditingAnime({ ...editingAnime, placements: updated });
+                                }}
+                                className={`p-2 rounded-xl text-left border transition-all ${
+                                  isSelected
+                                    ? 'bg-rose-950/60 border-rose-500 text-rose-200 shadow-sm shadow-rose-900/40'
+                                    : 'bg-slate-900 hover:bg-slate-850 border-slate-800 text-slate-400'
+                                }`}
+                              >
+                                <div className="flex items-center justify-between">
+                                  <span className="text-xs font-bold text-white">{plc.label}</span>
+                                  {isSelected && <Check className="w-3 h-3 text-rose-400" />}
+                                </div>
+                                <span className="text-[10px] text-slate-400 block mt-0.5">{plc.desc}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+
+                        {/* Custom Sections Assignment */}
+                        {sections.length > 0 && (
+                          <div className="pt-2 border-t border-slate-800/80">
+                            <span className="text-[10px] text-slate-400 block mb-1 font-semibold">Homepage Sections:</span>
+                            <div className="flex flex-wrap gap-2">
+                              {sections.map((sec) => {
+                                const isChecked = editingAnime.section_ids?.includes(sec.id);
+                                return (
+                                  <label
+                                    key={sec.id}
+                                    className={`flex items-center gap-1.5 px-2 py-1 rounded-lg text-[11px] cursor-pointer border ${
+                                      isChecked
+                                        ? 'bg-rose-950/40 border-rose-700/60 text-rose-300'
+                                        : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200'
+                                    }`}
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      checked={isChecked || false}
+                                      onChange={(e) => {
+                                        const cur = editingAnime.section_ids || [];
+                                        const updated = e.target.checked ? [...cur, sec.id] : cur.filter((id) => id !== sec.id);
+                                        setEditingAnime({ ...editingAnime, section_ids: updated });
+                                      }}
+                                      className="accent-rose-600 rounded"
+                                    />
+                                    <span>{sec.title}</span>
+                                  </label>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
                       <div className="flex items-center gap-3">
                         <button
                           type="submit"
-                          className="px-4 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs"
+                          className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-500 hover:to-red-500 text-white font-bold text-xs shadow-md shadow-rose-600/30 flex items-center gap-1.5"
                         >
-                          Save Series
+                          <Check className="w-4 h-4" />
+                          <span>Save Anime Series</span>
                         </button>
                         <button
                           type="button"
                           onClick={() => setEditingAnime(null)}
-                          className="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 text-xs"
+                          className="px-4 py-2.5 rounded-xl bg-slate-800 text-slate-300 hover:text-white text-xs"
                         >
                           Cancel
                         </button>
@@ -1363,11 +1531,13 @@ export const AdminModal: React.FC<AdminModalProps> = ({ onClose, onRefreshCatalo
                           rating: 9.0,
                           release_year: 2026,
                           classification: 'PG-13',
-                          genres: ['Action'],
+                          genres: ['Action', 'Fantasy'],
+                          placements: ['popular_movies', 'trending'],
+                          section_ids: [],
                           is_published: true
                         })
                       }
-                      className="px-3.5 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-md shadow-cyan-500/20"
+                      className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-500 hover:to-red-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-md shadow-rose-600/25"
                     >
                       <Plus className="w-4 h-4" />
                       <span>Add Movie</span>
@@ -1377,7 +1547,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({ onClose, onRefreshCatalo
                   {editingMovie && (
                     <form onSubmit={handleSaveMovie} className="mb-6 p-4 rounded-2xl bg-slate-900 border border-slate-800 flex flex-col gap-4">
                       <div className="flex items-center justify-between border-b border-slate-800 pb-2">
-                        <span className="font-bold text-sm text-cyan-400">
+                        <span className="font-bold text-sm text-rose-400">
                           {editingMovie.id ? 'Edit Movie' : 'Create New Movie'}
                         </span>
                         <button type="button" onClick={() => setEditingMovie(null)} className="text-slate-400 hover:text-white">
@@ -1438,6 +1608,21 @@ export const AdminModal: React.FC<AdminModalProps> = ({ onClose, onRefreshCatalo
                           />
                         </div>
 
+                        <div>
+                          <label className="block text-[11px] font-semibold text-slate-400 mb-1">Classification</label>
+                          <select
+                            value={editingMovie.classification || 'PG-13'}
+                            onChange={(e) => setEditingMovie({ ...editingMovie, classification: e.target.value as any })}
+                            className="w-full h-9 px-3 bg-slate-950 border border-slate-800 rounded-lg text-xs text-white"
+                          >
+                            <option value="G">G - General Audiences</option>
+                            <option value="PG">PG</option>
+                            <option value="PG-13">PG-13</option>
+                            <option value="TV-14">TV-14</option>
+                            <option value="TV-MA">TV-MA (Mature)</option>
+                          </select>
+                        </div>
+
                         <div className="sm:col-span-2">
                           <label className="block text-[11px] font-semibold text-slate-400 mb-1">
                             Video Stream URL (MP4 / HLS m3u8)
@@ -1452,11 +1637,179 @@ export const AdminModal: React.FC<AdminModalProps> = ({ onClose, onRefreshCatalo
                         </div>
                       </div>
 
+                      <div>
+                        <label className="block text-[11px] font-semibold text-slate-400 mb-1">Description / Synopsis</label>
+                        <textarea
+                          rows={2}
+                          value={editingMovie.description || ''}
+                          onChange={(e) => setEditingMovie({ ...editingMovie, description: e.target.value })}
+                          className="w-full p-2 bg-slate-950 border border-slate-800 rounded-lg text-xs text-white"
+                        />
+                      </div>
+
+                      {/* Movie Genre Selection */}
+                      <div className="p-3 rounded-xl bg-slate-950/80 border border-slate-800">
+                        <div className="flex items-center justify-between mb-2">
+                          <label className="text-[11px] font-bold text-rose-400 uppercase tracking-wider flex items-center gap-1.5">
+                            <span>🎭 Select Movie Genres / Genre Chunie</span>
+                          </label>
+                          <span className="text-[10px] text-slate-400">
+                            {editingMovie.genres?.length || 0} selected
+                          </span>
+                        </div>
+                        <div className="flex flex-wrap gap-1.5 mb-2.5">
+                          {POPULAR_GENRES.map((g) => {
+                            const isSelected = editingMovie.genres?.includes(g);
+                            return (
+                              <button
+                                key={g}
+                                type="button"
+                                onClick={() => {
+                                  const cur = editingMovie.genres || [];
+                                  const updated = isSelected ? cur.filter((x) => x !== g) : [...cur, g];
+                                  setEditingMovie({ ...editingMovie, genres: updated });
+                                }}
+                                className={`px-2.5 py-1 rounded-lg text-[11px] font-medium transition-all flex items-center gap-1 border ${
+                                  isSelected
+                                    ? 'bg-rose-600 text-white border-rose-500 shadow-sm shadow-rose-600/30 font-bold'
+                                    : 'bg-slate-900 hover:bg-slate-850 text-slate-300 border-slate-800'
+                                }`}
+                              >
+                                {isSelected && <Check className="w-3 h-3" />}
+                                <span>{g}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="text"
+                            placeholder="Add custom movie genre..."
+                            value={customMovieGenreInput}
+                            onChange={(e) => setCustomMovieGenreInput(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault();
+                                const val = customMovieGenreInput.trim();
+                                if (val) {
+                                  const cur = editingMovie.genres || [];
+                                  if (!cur.includes(val)) {
+                                    setEditingMovie({ ...editingMovie, genres: [...cur, val] });
+                                  }
+                                  setCustomMovieGenreInput('');
+                                }
+                              }
+                            }}
+                            className="h-8 px-2.5 bg-slate-900 border border-slate-800 rounded-lg text-xs text-white placeholder-slate-500 grow"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const val = customMovieGenreInput.trim();
+                              if (val) {
+                                const cur = editingMovie.genres || [];
+                                if (!cur.includes(val)) {
+                                  setEditingMovie({ ...editingMovie, genres: [...cur, val] });
+                                }
+                                setCustomMovieGenreInput('');
+                              }
+                            }}
+                            className="h-8 px-3 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold"
+                          >
+                            + Add Genre
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Movie Placement Selection (Kisme Dalna Hai) */}
+                      <div className="p-3 rounded-xl bg-slate-950/80 border border-rose-900/30">
+                        <div className="flex items-center justify-between mb-2">
+                          <label className="text-[11px] font-bold text-rose-400 uppercase tracking-wider flex items-center gap-1.5">
+                            <span>📌 Show In / Kisme Dalna Hai (Placement)</span>
+                          </label>
+                          <span className="text-[10px] text-slate-400">Choose sections where movie will appear</span>
+                        </div>
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-2.5">
+                          {[
+                            { key: 'hero', label: '🌟 Top Hero Slider', desc: 'Sabse upar banner me' },
+                            { key: 'popular_movies', label: '🎬 Popular Movies', desc: 'Popular films row me' },
+                            { key: 'trending', label: '🔥 Trending Now', desc: 'Trending section me' },
+                            { key: 'top_rated', label: '🏆 Top Rated', desc: 'Top rated showcase' }
+                          ].map((plc) => {
+                            const isSelected = editingMovie.placements?.includes(plc.key);
+                            return (
+                              <button
+                                key={plc.key}
+                                type="button"
+                                onClick={() => {
+                                  const cur = editingMovie.placements || [];
+                                  const updated = isSelected ? cur.filter((x) => x !== plc.key) : [...cur, plc.key];
+                                  setEditingMovie({ ...editingMovie, placements: updated });
+                                }}
+                                className={`p-2 rounded-xl text-left border transition-all ${
+                                  isSelected
+                                    ? 'bg-rose-950/60 border-rose-500 text-rose-200 shadow-sm shadow-rose-900/40'
+                                    : 'bg-slate-900 hover:bg-slate-850 border-slate-800 text-slate-400'
+                                }`}
+                              >
+                                <div className="flex items-center justify-between">
+                                  <span className="text-xs font-bold text-white">{plc.label}</span>
+                                  {isSelected && <Check className="w-3 h-3 text-rose-400" />}
+                                </div>
+                                <span className="text-[10px] text-slate-400 block mt-0.5">{plc.desc}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+
+                        {/* Custom Sections Assignment */}
+                        {sections.length > 0 && (
+                          <div className="pt-2 border-t border-slate-800/80">
+                            <span className="text-[10px] text-slate-400 block mb-1 font-semibold">Homepage Sections:</span>
+                            <div className="flex flex-wrap gap-2">
+                              {sections.map((sec) => {
+                                const isChecked = editingMovie.section_ids?.includes(sec.id);
+                                return (
+                                  <label
+                                    key={sec.id}
+                                    className={`flex items-center gap-1.5 px-2 py-1 rounded-lg text-[11px] cursor-pointer border ${
+                                      isChecked
+                                        ? 'bg-rose-950/40 border-rose-700/60 text-rose-300'
+                                        : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200'
+                                    }`}
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      checked={isChecked || false}
+                                      onChange={(e) => {
+                                        const cur = editingMovie.section_ids || [];
+                                        const updated = e.target.checked ? [...cur, sec.id] : cur.filter((id) => id !== sec.id);
+                                        setEditingMovie({ ...editingMovie, section_ids: updated });
+                                      }}
+                                      className="accent-rose-600 rounded"
+                                    />
+                                    <span>{sec.title}</span>
+                                  </label>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
                       <div className="flex items-center gap-3">
-                        <button type="submit" className="px-4 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs">
-                          Save Movie
+                        <button
+                          type="submit"
+                          className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-500 hover:to-red-500 text-white font-bold text-xs shadow-md shadow-rose-600/30 flex items-center gap-1.5"
+                        >
+                          <Check className="w-4 h-4" />
+                          <span>Save Movie</span>
                         </button>
-                        <button type="button" onClick={() => setEditingMovie(null)} className="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 text-xs">
+                        <button
+                          type="button"
+                          onClick={() => setEditingMovie(null)}
+                          className="px-4 py-2.5 rounded-xl bg-slate-800 text-slate-300 hover:text-white text-xs"
+                        >
                           Cancel
                         </button>
                       </div>

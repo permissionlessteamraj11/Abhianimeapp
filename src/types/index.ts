@@ -108,6 +108,8 @@ export interface Anime {
   view_count: number;
   genres: string[]; // genre ids or names
   categories: string[]; // category ids
+  placements?: string[]; // 'hero' | 'trending' | 'new_episodes' | 'popular_movies' | 'top_rated'
+  section_ids?: string[]; // IDs of specific homepage sections
   seasons?: Season[];
   total_seasons?: number;
   total_episodes?: number;
@@ -138,6 +140,8 @@ export interface Movie {
   view_count: number;
   genres: string[];
   categories: string[];
+  placements?: string[];
+  section_ids?: string[];
   video_assets?: VideoAsset[];
   subtitle_tracks?: SubtitleTrack[];
   audio_tracks?: AudioTrack[];

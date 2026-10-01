@@ -696,6 +696,8 @@ export const api = {
         view_count: anime.view_count || 0,
         genres: anime.genres || ['Action'],
         categories: anime.categories || ['all', 'anime'],
+        placements: anime.placements || ['new_episodes', 'trending'],
+        section_ids: anime.section_ids || [],
         seasons: anime.seasons || []
       };
       const idx = db.anime.findIndex((a) => a.id === id);
@@ -772,7 +774,9 @@ export const api = {
         is_published: movie.is_published ?? true,
         view_count: movie.view_count || 0,
         genres: movie.genres || ['Action'],
-        categories: movie.categories || ['all', 'movies']
+        categories: movie.categories || ['all', 'movies'],
+        placements: movie.placements || ['popular_movies', 'trending'],
+        section_ids: movie.section_ids || []
       };
       const idx = db.movies.findIndex((m) => m.id === id);
       if (idx >= 0) db.movies[idx] = item;

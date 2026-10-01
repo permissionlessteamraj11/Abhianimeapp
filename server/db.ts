@@ -5,17 +5,23 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Data directory resolution
-const DATA_DIR = path.resolve(__dirname, '../data');
+// Data directory resolution: On Vercel / serverless runtime, only /tmp is writable
+const isVercel = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.VERCEL_ENV);
+const DATA_DIR = isVercel ? path.resolve('/tmp', 'stark_data') : path.resolve(__dirname, '../data');
 const BACKUPS_DIR = path.resolve(DATA_DIR, 'backups');
 const DB_FILE = path.resolve(DATA_DIR, 'stark_anime.db.json');
+const BUNDLED_DB_FILE = path.resolve(__dirname, '../data/stark_anime.db.json');
 
-// Ensure directories exist
-if (!fs.existsSync(DATA_DIR)) {
-  fs.mkdirSync(DATA_DIR, { recursive: true });
-}
-if (!fs.existsSync(BACKUPS_DIR)) {
-  fs.mkdirSync(BACKUPS_DIR, { recursive: true });
+// Ensure directories exist safely without throwing on read-only environments
+try {
+  if (!fs.existsSync(DATA_DIR)) {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+  }
+  if (!fs.existsSync(BACKUPS_DIR)) {
+    fs.mkdirSync(BACKUPS_DIR, { recursive: true });
+  }
+} catch (e) {
+  console.warn('[DatabaseEngine] Notice: Initial data directory creation bypassed (read-only environment):', e);
 }
 
 export interface DatabaseSchema {
@@ -47,12 +53,23 @@ const DEFAULT_CATEGORIES = [
 
 const DEFAULT_GENRES = [
   { id: 'action', name: 'Action', slug: 'action', display_order: 1 },
-  { id: 'scifi', name: 'Sci-Fi', slug: 'scifi', display_order: 2 },
-  { id: 'fantasy', name: 'Fantasy', slug: 'fantasy', display_order: 3 },
+  { id: 'adventure', name: 'Adventure', slug: 'adventure', display_order: 2 },
+  { id: 'comedy', name: 'Comedy', slug: 'comedy', display_order: 3 },
   { id: 'cyberpunk', name: 'Cyberpunk', slug: 'cyberpunk', display_order: 4 },
-  { id: 'adventure', name: 'Adventure', slug: 'adventure', display_order: 5 },
-  { id: 'mystery', name: 'Mystery', slug: 'mystery', display_order: 6 },
-  { id: 'supernatural', name: 'Supernatural', slug: 'supernatural', display_order: 7 }
+  { id: 'drama', name: 'Drama', slug: 'drama', display_order: 5 },
+  { id: 'fantasy', name: 'Fantasy', slug: 'fantasy', display_order: 6 },
+  { id: 'horror', name: 'Horror', slug: 'horror', display_order: 7 },
+  { id: 'isekai', name: 'Isekai', slug: 'isekai', display_order: 8 },
+  { id: 'mecha', name: 'Mecha', slug: 'mecha', display_order: 9 },
+  { id: 'mystery', name: 'Mystery', slug: 'mystery', display_order: 10 },
+  { id: 'romance', name: 'Romance', slug: 'romance', display_order: 11 },
+  { id: 'scifi', name: 'Sci-Fi', slug: 'scifi', display_order: 12 },
+  { id: 'seinen', name: 'Seinen', slug: 'seinen', display_order: 13 },
+  { id: 'shounen', name: 'Shounen', slug: 'shounen', display_order: 14 },
+  { id: 'slice_of_life', name: 'Slice of Life', slug: 'slice-of-life', display_order: 15 },
+  { id: 'sports', name: 'Sports', slug: 'sports', display_order: 16 },
+  { id: 'supernatural', name: 'Supernatural', slug: 'supernatural', display_order: 17 },
+  { id: 'thriller', name: 'Thriller', slug: 'thriller', display_order: 18 }
 ];
 
 const DEFAULT_SECTIONS = [
@@ -377,8 +394,13 @@ class DatabaseEngine {
 
   private loadOrInitialize(): DatabaseSchema {
     try {
-      if (fs.existsSync(DB_FILE)) {
-        const raw = fs.readFileSync(DB_FILE, 'utf-8');
+      let targetFile = DB_FILE;
+      if (!fs.existsSync(targetFile) && fs.existsSync(BUNDLED_DB_FILE)) {
+        targetFile = BUNDLED_DB_FILE;
+      }
+
+      if (fs.existsSync(targetFile)) {
+        const raw = fs.readFileSync(targetFile, 'utf-8');
         const parsed = JSON.parse(raw);
         if (parsed && typeof parsed.version === 'number') {
           // Verify critical arrays
@@ -450,10 +472,19 @@ class DatabaseEngine {
   }
 
   private persistSync(data: DatabaseSchema): void {
-    const tmpFile = `${DB_FILE}.tmp.${Date.now()}`;
-    const serialized = JSON.stringify(data, null, 2);
-    fs.writeFileSync(tmpFile, serialized, 'utf-8');
-    fs.renameSync(tmpFile, DB_FILE);
+    try {
+      const dir = path.dirname(DB_FILE);
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
+      const tmpFile = `${DB_FILE}.tmp.${Date.now()}`;
+      const serialized = JSON.stringify(data, null, 2);
+      fs.writeFileSync(tmpFile, serialized, 'utf-8');
+      fs.renameSync(tmpFile, DB_FILE);
+    } catch (err) {
+      // In read-only serverless / Vercel runtime, in-memory state remains fully consistent
+      console.warn('[DatabaseEngine] Notice: Disk persistence bypassed (read-only environment):', err);
+    }
   }
 
   private queueSave(eventType: string, payload?: any): void {
@@ -576,8 +607,10 @@ class DatabaseEngine {
       distribution_rights_confirmed: true,
       is_published: animeData.is_published !== false,
       view_count: animeData.view_count || 0,
-      genres: animeData.genres || ['Action'],
-      categories: animeData.categories || ['all', 'anime'],
+      genres: Array.isArray(animeData.genres) && animeData.genres.length > 0 ? animeData.genres : ['Action'],
+      categories: Array.isArray(animeData.categories) ? animeData.categories : ['all', 'anime'],
+      placements: Array.isArray(animeData.placements) ? animeData.placements : (animeData.placements ? [animeData.placements] : []),
+      section_ids: Array.isArray(animeData.section_ids) ? animeData.section_ids : [],
       seasons: Array.isArray(animeData.seasons) ? animeData.seasons : [],
       updated_at: new Date().toISOString()
     };
@@ -587,6 +620,36 @@ class DatabaseEngine {
     } else {
       record.created_at = new Date().toISOString();
       this.db.anime.unshift(record);
+    }
+
+    // Auto-sync with Hero Carousel if 'hero' placement is selected
+    if (record.placements?.includes('hero')) {
+      const bannerIdx = this.db.hero_banners.findIndex((b: any) => b.linked_id === record.id);
+      const bannerData = {
+        id: bannerIdx >= 0 ? this.db.hero_banners[bannerIdx].id : `hero-${record.id}`,
+        title: record.title,
+        subtitle: record.genres ? record.genres.slice(0, 2).join(' • ') : '',
+        image_url: record.backdrop_url || record.poster_url,
+        linked_type: 'anime',
+        linked_id: record.id,
+        button_text: 'Watch Now',
+        display_order: 1,
+        is_enabled: true,
+        rating: record.rating,
+        year: record.release_year,
+        classification: record.classification,
+        description: record.description
+      };
+      if (bannerIdx >= 0) {
+        this.db.hero_banners[bannerIdx] = { ...this.db.hero_banners[bannerIdx], ...bannerData };
+      } else {
+        this.db.hero_banners.unshift(bannerData);
+      }
+    } else {
+      const bannerIdx = this.db.hero_banners.findIndex((b: any) => b.linked_id === record.id && b.id === `hero-${record.id}`);
+      if (bannerIdx >= 0) {
+        this.db.hero_banners.splice(bannerIdx, 1);
+      }
     }
 
     this.queueSave('ANIME_SAVED', { id });
@@ -728,8 +791,10 @@ class DatabaseEngine {
       distribution_rights_confirmed: true,
       is_published: movieData.is_published !== false,
       view_count: movieData.view_count || 0,
-      genres: movieData.genres || ['Action'],
-      categories: movieData.categories || ['all', 'movies'],
+      genres: Array.isArray(movieData.genres) && movieData.genres.length > 0 ? movieData.genres : ['Action'],
+      categories: Array.isArray(movieData.categories) ? movieData.categories : ['all', 'movies'],
+      placements: Array.isArray(movieData.placements) ? movieData.placements : (movieData.placements ? [movieData.placements] : []),
+      section_ids: Array.isArray(movieData.section_ids) ? movieData.section_ids : [],
       stream_url: movieData.stream_url || '',
       updated_at: new Date().toISOString()
     };
@@ -739,6 +804,36 @@ class DatabaseEngine {
     } else {
       record.created_at = new Date().toISOString();
       this.db.movies.unshift(record);
+    }
+
+    // Auto-sync with Hero Carousel if 'hero' placement is selected
+    if (record.placements?.includes('hero')) {
+      const bannerIdx = this.db.hero_banners.findIndex((b: any) => b.linked_id === record.id);
+      const bannerData = {
+        id: bannerIdx >= 0 ? this.db.hero_banners[bannerIdx].id : `hero-${record.id}`,
+        title: record.title,
+        subtitle: record.genres ? record.genres.slice(0, 2).join(' • ') : '',
+        image_url: record.backdrop_url || record.poster_url,
+        linked_type: 'movie',
+        linked_id: record.id,
+        button_text: 'Watch Movie',
+        display_order: 1,
+        is_enabled: true,
+        rating: record.rating,
+        year: record.release_year,
+        classification: record.classification,
+        description: record.description
+      };
+      if (bannerIdx >= 0) {
+        this.db.hero_banners[bannerIdx] = { ...this.db.hero_banners[bannerIdx], ...bannerData };
+      } else {
+        this.db.hero_banners.unshift(bannerData);
+      }
+    } else {
+      const bannerIdx = this.db.hero_banners.findIndex((b: any) => b.linked_id === record.id && b.id === `hero-${record.id}`);
+      if (bannerIdx >= 0) {
+        this.db.hero_banners.splice(bannerIdx, 1);
+      }
     }
 
     this.queueSave('MOVIE_SAVED', { id });
