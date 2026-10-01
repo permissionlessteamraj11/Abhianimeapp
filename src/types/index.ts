@@ -52,6 +52,36 @@ export interface AudioTrack {
   is_default: boolean;
 }
 
+export interface CommentReply {
+  id: string;
+  comment_id: string;
+  user_id: string;
+  username: string;
+  user_avatar?: string;
+  badge?: string;
+  text: string;
+  created_at: string;
+  likes_count: number;
+  is_liked?: boolean;
+}
+
+export interface Comment {
+  id: string;
+  content_id: string;
+  episode_id?: string;
+  user_id: string;
+  username: string;
+  user_avatar?: string;
+  badge?: string;
+  text: string;
+  created_at: string;
+  likes_count: number;
+  is_liked?: boolean;
+  replies_count: number;
+  replies?: CommentReply[];
+  is_expanded?: boolean;
+}
+
 export interface Episode {
   id: string;
   anime_id: string;
@@ -68,6 +98,12 @@ export interface Episode {
   rights_confirmed_at?: string;
   is_published: boolean;
   view_count: number;
+  quality?: string;
+  codec?: string;
+  color_depth?: string;
+  audio_language?: string;
+  subtitle_language?: string;
+  file_size?: string;
   video_assets?: VideoAsset[];
   subtitle_tracks?: SubtitleTrack[];
   audio_tracks?: AudioTrack[];
@@ -142,6 +178,12 @@ export interface Movie {
   categories: string[];
   placements?: string[];
   section_ids?: string[];
+  quality?: string;
+  codec?: string;
+  color_depth?: string;
+  audio_language?: string;
+  subtitle_language?: string;
+  file_size?: string;
   video_assets?: VideoAsset[];
   subtitle_tracks?: SubtitleTrack[];
   audio_tracks?: AudioTrack[];
