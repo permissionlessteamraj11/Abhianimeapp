@@ -7,8 +7,3 @@ TELEGRAM_BOT_TOKEN = "8832195140:AAHgKP4G8N8lSUuBf7vRk3EUs35lo1YHFwQ"
 TELEGRAM_API_ID = "37729457"
 TELEGRAM_API_HASH = "bb68973b7efcbbd074cda984c95502d6"
 ENVIRONMENT = "production"
-
-# Cloudflare KV Storage Binding for Persistent Anime & Episode Metadata
-[[kv_namespaces]]
-binding = "STARK_ANIME_KV"
-id = "stark_anime_kv_store"
