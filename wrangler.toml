@@ -2,6 +2,9 @@ name = "abhianimeapp"
 main = "bot/worker.js"
 compatibility_date = "2024-01-01"
 
+[build]
+command = ""
+
 [vars]
 TELEGRAM_BOT_TOKEN = "8832195140:AAHgKP4G8N8lSUuBf7vRk3EUs35lo1YHFwQ"
 TELEGRAM_API_ID = "37729457"
