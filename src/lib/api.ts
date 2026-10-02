@@ -152,6 +152,40 @@ const DEFAULT_SECTIONS: HomepageSection[] = [
   }
 ];
 
+
+function mergeById<T extends { id: string }>(localList: T[], serverList: T[]): T[] {
+  const map = new Map<string, T>();
+  for (const item of serverList || []) {
+    if (item && item.id) map.set(item.id, item);
+  }
+  for (const item of localList || []) {
+    if (item && item.id) {
+      const existing = map.get(item.id);
+      map.set(item.id, existing ? { ...existing, ...item } : item);
+    }
+  }
+  return Array.from(map.values());
+}
+
+function mergeSeasons(serverSeasons: any[], localSeasons: any[]): any[] {
+  const map = new Map<string, any>();
+  for (const s of serverSeasons || []) {
+    if (s && s.id) map.set(s.id, s);
+  }
+  for (const s of localSeasons || []) {
+    if (s && s.id) {
+      const existing = map.get(s.id);
+      if (existing) {
+        const mergedEps = mergeById(s.episodes || [], existing.episodes || []);
+        map.set(s.id, { ...existing, ...s, episodes: mergedEps });
+      } else {
+        map.set(s.id, s);
+      }
+    }
+  }
+  return Array.from(map.values());
+}
+
 function getOfflineDb(): OfflineDbState {
   try {
     const raw = localStorage.getItem(OFFLINE_STORAGE_KEY);
@@ -206,31 +240,74 @@ export const api = {
     homepageSections: HomepageSection[];
     settings: AppSettings;
   }> {
+    const offlineDb = getOfflineDb();
+    let data: any = null;
+
     try {
       const res = await fetch(apiUrl('/api/home'), { headers: getHeaders() });
-      const data = await handleResponse<{
+      data = await handleResponse<{
         categories: Category[];
         heroBanners: HeroBanner[];
         homepageSections: HomepageSection[];
         settings: AppSettings;
       }>(res);
-      const db = getOfflineDb();
-      db.categories = data.categories || db.categories;
-      db.heroBanners = data.heroBanners || db.heroBanners;
-      db.sections = data.homepageSections || db.sections;
-      db.settings = data.settings || db.settings;
-      saveOfflineDb(db);
-      return data;
     } catch (err) {
       console.warn('[Stark Anime] Server home fetch failed, using local offline store:', err);
-      const db = getOfflineDb();
+    }
+
+    if (!data) {
       return {
-        categories: db.categories,
-        heroBanners: db.heroBanners,
-        homepageSections: db.sections,
-        settings: db.settings
+        categories: offlineDb.categories,
+        heroBanners: offlineDb.heroBanners,
+        homepageSections: offlineDb.sections,
+        settings: offlineDb.settings
       };
     }
+
+    offlineDb.categories = data.categories || offlineDb.categories;
+    offlineDb.heroBanners = data.heroBanners || offlineDb.heroBanners;
+    offlineDb.sections = data.homepageSections || offlineDb.sections;
+    offlineDb.settings = data.settings || offlineDb.settings;
+    saveOfflineDb(offlineDb);
+
+    const localPool = [...(offlineDb.anime || []), ...(offlineDb.movies || [])].filter((item) => item.is_published !== false);
+
+    const populatedSections = (data.homepageSections || []).map((sec: any) => {
+      const serverItems = sec.items || [];
+      const combined = [...serverItems];
+      const seen = new Set(serverItems.map((i: any) => i.id));
+
+      for (const item of localPool) {
+        if (!seen.has(item.id)) {
+          let matches = false;
+          if (item.section_ids?.includes(sec.id) || item.placements?.includes(sec.section_type) || item.placements?.includes(sec.id)) {
+            matches = true;
+          } else if (sec.section_type === 'new_episodes' && !('runtime_minutes' in item)) {
+            matches = true;
+          } else if (sec.section_type === 'popular_movies' && 'runtime_minutes' in item) {
+            matches = true;
+          } else if (sec.section_type === 'trending') {
+            matches = true;
+          }
+          if (matches) {
+            seen.add(item.id);
+            combined.unshift(item);
+          }
+        }
+      }
+
+      return {
+        ...sec,
+        items: combined.slice(0, sec.max_items || 8)
+      };
+    });
+
+    return {
+      categories: data.categories || offlineDb.categories,
+      heroBanners: data.heroBanners || offlineDb.heroBanners,
+      homepageSections: populatedSections,
+      settings: data.settings || offlineDb.settings
+    };
   },
 
   async getCategories(): Promise<Category[]> {
@@ -243,12 +320,19 @@ export const api = {
   },
 
   async getAnime(id: string): Promise<Anime> {
+    const localAnime = getOfflineDb().anime.find((a) => a.id === id);
     try {
       const res = await fetch(apiUrl(`/api/anime/${id}`), { headers: getHeaders() });
-      return await handleResponse<Anime>(res);
+      const serverAnime = await handleResponse<Anime>(res);
+      if (localAnime) {
+        return {
+          ...serverAnime,
+          seasons: mergeSeasons(serverAnime.seasons || [], localAnime.seasons || [])
+        };
+      }
+      return serverAnime;
     } catch {
-      const found = getOfflineDb().anime.find((a) => a.id === id);
-      if (found) return found;
+      if (localAnime) return localAnime;
       throw new Error('Anime not found');
     }
   },
@@ -648,15 +732,16 @@ export const api = {
   },
 
   async adminGetAnime(): Promise<Anime[]> {
+    const db = getOfflineDb();
     try {
       const res = await fetch(apiUrl('/api/admin/anime'), { headers: getHeaders() });
       const serverData = await handleResponse<Anime[]>(res);
-      const db = getOfflineDb();
-      db.anime = serverData;
+      const merged = mergeById(db.anime, serverData);
+      db.anime = merged;
       saveOfflineDb(db);
-      return serverData;
+      return merged;
     } catch {
-      return getOfflineDb().anime;
+      return db.anime;
     }
   },
 
@@ -725,15 +810,16 @@ export const api = {
   },
 
   async adminGetMovies(): Promise<Movie[]> {
+    const db = getOfflineDb();
     try {
       const res = await fetch(apiUrl('/api/admin/movies'), { headers: getHeaders() });
       const serverData = await handleResponse<Movie[]>(res);
-      const db = getOfflineDb();
-      db.movies = serverData;
+      const merged = mergeById(db.movies, serverData);
+      db.movies = merged;
       saveOfflineDb(db);
-      return serverData;
+      return merged;
     } catch {
-      return getOfflineDb().movies;
+      return db.movies;
     }
   },
 
@@ -804,36 +890,35 @@ export const api = {
 
   async adminSaveSeason(animeId: string, season: { id?: string; season_number: number; title: string; description?: string; is_published: boolean }): Promise<{ success: boolean }> {
     try {
-      const res = await fetch(apiUrl(`/api/admin/anime/${animeId}/seasons`), {
+      await fetch(apiUrl(`/api/admin/anime/${animeId}/seasons`), {
         method: 'POST',
         headers: getHeaders(),
         body: JSON.stringify(season)
       });
-      return await handleResponse(res);
-    } catch {
-      const db = getOfflineDb();
-      const anime = db.anime.find((a) => a.id === animeId);
-      if (anime) {
-        if (!anime.seasons) anime.seasons = [];
-        const seasonId = season.id || `season_${Date.now()}`;
-        const sIndex = anime.seasons.findIndex((s) => s.id === seasonId);
-        if (sIndex >= 0) {
-          anime.seasons[sIndex] = { ...anime.seasons[sIndex], ...season };
-        } else {
-          anime.seasons.push({
-            id: seasonId,
-            anime_id: animeId,
-            season_number: season.season_number,
-            title: season.title,
-            description: season.description,
-            is_published: season.is_published,
-            episodes: []
-          });
-        }
-        saveOfflineDb(db);
+    } catch {}
+
+    const db = getOfflineDb();
+    const anime = db.anime.find((a) => a.id === animeId);
+    if (anime) {
+      if (!anime.seasons) anime.seasons = [];
+      const seasonId = season.id || `season_${Date.now()}`;
+      const sIndex = anime.seasons.findIndex((s) => s.id === seasonId);
+      if (sIndex >= 0) {
+        anime.seasons[sIndex] = { ...anime.seasons[sIndex], ...season };
+      } else {
+        anime.seasons.push({
+          id: seasonId,
+          anime_id: animeId,
+          season_number: season.season_number,
+          title: season.title,
+          description: season.description,
+          is_published: season.is_published,
+          episodes: []
+        });
       }
-      return { success: true };
+      saveOfflineDb(db);
     }
+    return { success: true };
   },
 
   async adminDeleteSeason(animeId: string, seasonId: string): Promise<{ success: boolean }> {
@@ -856,40 +941,40 @@ export const api = {
 
   async adminSaveEpisode(animeId: string, seasonId: string, episodeData: any): Promise<{ success: boolean }> {
     try {
-      const res = await fetch(apiUrl(`/api/admin/anime/${animeId}/seasons/${seasonId}/episodes`), {
+      await fetch(apiUrl(`/api/admin/anime/${animeId}/seasons/${seasonId}/episodes`), {
         method: 'POST',
         headers: getHeaders(),
         body: JSON.stringify(episodeData)
       });
-      return await handleResponse(res);
-    } catch {
-      const db = getOfflineDb();
-      const anime = db.anime.find((a) => a.id === animeId);
-      const season = anime?.seasons?.find((s) => s.id === seasonId);
-      if (season) {
-        if (!season.episodes) season.episodes = [];
-        const epId = episodeData.id || `ep_${Date.now()}`;
-        const epIndex = season.episodes.findIndex((e) => e.id === epId);
-        const epRecord: Episode = {
-          id: epId,
-          anime_id: animeId,
-          season_id: seasonId,
-          episode_number: episodeData.episode_number || season.episodes.length + 1,
-          title: episodeData.title || `Episode ${season.episodes.length + 1}`,
-          description: episodeData.description || '',
-          duration_seconds: episodeData.duration_seconds || 1440,
-          thumbnail_url: episodeData.thumbnail_url || anime?.backdrop_url || anime?.poster_url || '/images/hero_cyber_samurai.jpg',
-          stream_url: episodeData.stream_url || '',
-          distribution_rights_confirmed: true,
-          is_published: episodeData.is_published ?? true,
-          view_count: 0
-        };
-        if (epIndex >= 0) season.episodes[epIndex] = epRecord;
-        else season.episodes.push(epRecord);
-        saveOfflineDb(db);
-      }
-      return { success: true };
+    } catch {}
+
+    const db = getOfflineDb();
+    const anime = db.anime.find((a) => a.id === animeId);
+    const season = anime?.seasons?.find((s) => s.id === seasonId);
+    if (season) {
+      if (!season.episodes) season.episodes = [];
+      const epId = episodeData.id || `ep_${Date.now()}`;
+      const epIndex = season.episodes.findIndex((e) => e.id === epId);
+      const epRecord: Episode = {
+        id: epId,
+        anime_id: animeId,
+        season_id: seasonId,
+        episode_number: episodeData.episode_number || season.episodes.length + 1,
+        title: episodeData.title || `Episode ${season.episodes.length + 1}`,
+        description: episodeData.description || '',
+        duration_seconds: episodeData.duration_seconds || 1440,
+        thumbnail_url: episodeData.thumbnail_url || anime?.backdrop_url || anime?.poster_url || '/images/hero_cyber_samurai.jpg',
+        stream_url: episodeData.stream_url || '',
+        video_assets: episodeData.video_assets || [],
+        distribution_rights_confirmed: true,
+        is_published: episodeData.is_published ?? true,
+        view_count: 0
+      };
+      if (epIndex >= 0) season.episodes[epIndex] = epRecord;
+      else season.episodes.push(epRecord);
+      saveOfflineDb(db);
     }
+    return { success: true };
   },
 
   async adminDeleteEpisode(animeId: string, seasonId: string, episodeId: string): Promise<{ success: boolean }> {

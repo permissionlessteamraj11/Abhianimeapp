@@ -34,7 +34,14 @@ export default {
       const webhookUrl = `${url.origin}/webhook`;
       const res = await fetch(`https://api.telegram.org/bot${botToken}/setWebhook?url=${encodeURIComponent(webhookUrl)}`);
       const data = await res.json();
-      return new Response(JSON.stringify({ success: true, webhookUrl, telegram_response: data }), {
+      return new Response(JSON.stringify({
+        success: data.ok === true,
+        message: data.ok ? "Webhook registered successfully with Telegram!" : "Failed to register webhook with Telegram.",
+        bot_url: `https://t.me/starkanimebot`,
+        webhook_url: webhookUrl,
+        telegram_response: data,
+        instructions: "Bot ready hai! Ab Telegram par bot open karke /start bhejien aur videos forward/upload karna shuru karein."
+      }, null, 2), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' }
       });
     }
@@ -71,16 +78,36 @@ export default {
       return Response.redirect(fileUrl, 302);
     }
 
+    const catalog = await getCatalog(env);
+    let totalEps = 0;
+    (catalog.anime || []).forEach(a => {
+      a.seasons?.forEach(s => {
+        totalEps += s.episodes?.length || 0;
+      });
+    });
+
     return new Response(JSON.stringify({
       status: "online",
-      name: "Stark Anime Telegram Bot & Cloudflare Storage Engine",
+      service: "Stark Anime Telegram Bot & Cloudflare Engine",
       bot_token: botToken.slice(0, 10) + "...",
       api_id: DEFAULT_API_ID,
-      endpoints: {
+      urls: {
         set_webhook: `${url.origin}/set-webhook`,
-        webhook: `${url.origin}/webhook`,
-        catalog: `${url.origin}/api/catalog`
-      }
+        webhook_endpoint: `${url.origin}/webhook`,
+        catalog_api: `${url.origin}/api/catalog`,
+        stream_base: `${url.origin}/api/stream/`
+      },
+      stats: {
+        total_anime: catalog.anime?.length || 0,
+        total_movies: catalog.movies?.length || 0,
+        total_episodes: totalEps,
+        version: catalog.version || 1
+      },
+      setup_instructions: [
+        `1. Click or open: ${url.origin}/set-webhook`,
+        `2. Open your bot in Telegram and send /start`,
+        `3. Send or forward anime videos with caption: /ep <anime_id> <season_num> <ep_num> [quality] <Episode Title>`
+      ]
     }, null, 2), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' }
     });
@@ -95,21 +122,22 @@ async function handleTelegramUpdate(update, env, botToken, origin) {
 
   if (text.startsWith('/start')) {
     await sendTelegramMessage(botToken, chatId, `
-⚡ *Stark Anime - Episode Upload Bot*
+⚡ *Stark Anime - Episode & Video Upload Bot*
 
-Welcome! Is bot se aap Anime Series, Seasons aur Episodes direct upload & control kar sakte ho. All data Cloudflare Storage par save hoga.
+Welcome! Is bot se aap Anime Series, Seasons aur Episodes direct upload & control kar sakte ho. Multi-quality (480p, 720p, 1080p) videos control ho jayengi.
 
-*Available Commands:*
+*Main Commands:*
 • \`/addanime <Title>\` - Naya Anime banayein
-• \`/listanime\` - Sabhi Anime series list karein
-• \`/addseason <AnimeID> <SeasonNumber> [Title]\` - Season banayein
-• \`/episodes <AnimeID>\` - Anime ke episodes dekhein
-• \`/deleteepisode <AnimeID> <SeasonID> <EpisodeID>\` - Episode delete karein
-• \`/status\` - Database stats dekhein
+• \`/listanime\` - Sabhi Anime series list karein with IDs
+• \`/editanime <anime_id> <field> <value>\` - Anime detail edit karein
+• \`/editepisode <anime_id> <season_num> <ep_num> <field> <value>\` - Episode edit karein
+• \`/forward <anime_id> <season_num> <ep_num>\` - Episode videos bot chat me mangwaye
+• \`/status\` - Storage & database stats
 
-*Video Uploading:*
-Kisi bhi video file ya document ko bot me send karein aur caption me aise likhein:
-\`/ep <anime_id> <season_num> <ep_num> <Episode Title>\`
+*Video Uploading / Forwarding:*
+Kisi bhi 480p, 720p, 1080p video ko bot me bhejien/forward karein aur caption me likhein:
+\`/ep <anime_id> <season_num> <ep_num> <quality> <Episode Title>\`
+_Example:_ \`/ep anime_12345 1 1 1080p Episode 1 The Beginning\`
     `);
     return;
   }
@@ -117,7 +145,7 @@ Kisi bhi video file ya document ko bot me send karein aur caption me aise likhei
   if (text.startsWith('/status')) {
     const catalog = await getCatalog(env);
     let totalEps = 0;
-    catalog.anime.forEach(a => {
+    (catalog.anime || []).forEach(a => {
       a.seasons?.forEach(s => {
         totalEps += s.episodes?.length || 0;
       });
@@ -125,10 +153,11 @@ Kisi bhi video file ya document ko bot me send karein aur caption me aise likhei
 
     await sendTelegramMessage(botToken, chatId, `
 📊 *Cloudflare Storage Status*
-• Total Anime: *${catalog.anime.length}*
-• Total Movies: *${catalog.movies.length}*
+• Total Anime: *${catalog.anime?.length || 0}*
+• Total Movies: *${catalog.movies?.length || 0}*
 • Total Episodes: *${totalEps}*
 • Catalog Version: *v${catalog.version || 1}*
+• Origin URL: \`${origin}\`
     `);
     return;
   }
@@ -144,6 +173,7 @@ Kisi bhi video file ya document ko bot me send karein aur caption me aise likhei
     }
 
     const catalog = await getCatalog(env);
+    catalog.anime = catalog.anime || [];
     const animeId = `anime_${Date.now()}`;
     const newAnime = {
       id: animeId,
@@ -183,28 +213,173 @@ Kisi bhi video file ya document ko bot me send karein aur caption me aise likhei
 ✅ *Anime Created Successfully!*
 • Title: *${title}*
 • Anime ID: \`${animeId}\`
-• Default Season: \`Season 1\` (\`s1_${animeId}\`)
+• Default Season: \`Season 1\`
 
-Ab episode upload karne ke liye video bhejien. Caption:
-\`/ep ${animeId} 1 1 Episode 1 Title\`
+Video bhejien aur caption:
+\`/ep ${animeId} 1 1 1080p Episode 1 Title\`
     `);
     return;
   }
 
   if (text.startsWith('/listanime')) {
     const catalog = await getCatalog(env);
-    if (catalog.anime.length === 0) {
-      await sendTelegramMessage(botToken, chatId, "ℹ️ Koi Anime nahi hai. \`/addanime <Title>\` se pehle anime create karein.");
+    const animeList = catalog.anime || [];
+    if (animeList.length === 0) {
+      await sendTelegramMessage(botToken, chatId, "ℹ️ Catalog me koi anime nahi hai. \`/addanime <Title>\` se pehle anime create karein.");
       return;
     }
 
     let msgText = "📺 *Anime Catalog List:*\n\n";
-    catalog.anime.forEach((a, idx) => {
+    animeList.forEach((a, idx) => {
       const epCount = a.seasons?.reduce((acc, s) => acc + (s.episodes?.length || 0), 0) || 0;
       msgText += `${idx + 1}. *${a.title}*\n   • ID: \`${a.id}\`\n   • Seasons: ${a.seasons?.length || 0} | Episodes: ${epCount}\n\n`;
     });
 
     await sendTelegramMessage(botToken, chatId, msgText);
+    return;
+  }
+
+  if (text.startsWith('/editanime')) {
+    const parts = text.split(' ');
+    parts.shift();
+    if (parts.length < 3) {
+      await sendTelegramMessage(botToken, chatId, "❌ Usage: `/editanime <anime_id> <title|description|poster_url|status> <value>`");
+      return;
+    }
+
+    const animeId = parts[0];
+    const field = parts[1].toLowerCase();
+    const value = parts.slice(2).join(' ');
+
+    const catalog = await getCatalog(env);
+    const anime = (catalog.anime || []).find(a => a.id === animeId);
+
+    if (!anime) {
+      await sendTelegramMessage(botToken, chatId, `❌ Anime ID \`${animeId}\` not found! Use \`/listanime\`.`);
+      return;
+    }
+
+    if (field === 'title') {
+      anime.title = value;
+      anime.slug = value.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+    } else if (field === 'description') {
+      anime.description = value;
+    } else if (field === 'poster_url' || field === 'poster') {
+      anime.poster_url = value;
+    } else if (field === 'status') {
+      anime.status = value;
+    } else {
+      await sendTelegramMessage(botToken, chatId, "❌ Valid fields: `title`, `description`, `poster_url`, `status`");
+      return;
+    }
+
+    await saveCatalog(env, catalog);
+    await sendTelegramMessage(botToken, chatId, `✅ *Anime Updated!* Field *${field}* set to: ${value}`);
+    return;
+  }
+
+  if (text.startsWith('/editepisode')) {
+    const parts = text.split(' ');
+    parts.shift();
+    if (parts.length < 5) {
+      await sendTelegramMessage(botToken, chatId, "❌ Usage: `/editepisode <anime_id> <season_num> <ep_num> <title|description> <value>`");
+      return;
+    }
+
+    const animeId = parts[0];
+    const seasonNum = parseInt(parts[1]) || 1;
+    const epNum = parseInt(parts[2]) || 1;
+    const field = parts[3].toLowerCase();
+    const value = parts.slice(4).join(' ');
+
+    const catalog = await getCatalog(env);
+    const anime = (catalog.anime || []).find(a => a.id === animeId);
+    const season = anime?.seasons?.find(s => s.season_number === seasonNum);
+    const episode = season?.episodes?.find(e => e.episode_number === epNum);
+
+    if (!episode) {
+      await sendTelegramMessage(botToken, chatId, `❌ Episode not found for Anime \`${animeId}\` S${seasonNum} E${epNum}`);
+      return;
+    }
+
+    if (field === 'title') {
+      episode.title = value;
+    } else if (field === 'description') {
+      episode.description = value;
+    } else {
+      await sendTelegramMessage(botToken, chatId, "❌ Valid fields: `title`, `description`");
+      return;
+    }
+
+    await saveCatalog(env, catalog);
+    await sendTelegramMessage(botToken, chatId, `✅ *Episode S${seasonNum} E${epNum} Updated!* ${field} = ${value}`);
+    return;
+  }
+
+  if (text.startsWith('/forward')) {
+    const parts = text.split(' ');
+    parts.shift();
+    if (parts.length < 3) {
+      await sendTelegramMessage(botToken, chatId, "❌ Usage: `/forward <anime_id> <season_num> <ep_num>`");
+      return;
+    }
+
+    const animeId = parts[0];
+    const seasonNum = parseInt(parts[1]) || 1;
+    const epNum = parseInt(parts[2]) || 1;
+
+    const catalog = await getCatalog(env);
+    const anime = (catalog.anime || []).find(a => a.id === animeId);
+    const season = anime?.seasons?.find(s => s.season_number === seasonNum);
+    const episode = season?.episodes?.find(e => e.episode_number === epNum);
+
+    if (!episode) {
+      await sendTelegramMessage(botToken, chatId, `❌ Episode S${seasonNum} E${epNum} not found for Anime \`${animeId}\`.`);
+      return;
+    }
+
+    let forwardMsg = `🎬 *${anime.title}* - Season ${seasonNum} Episode ${epNum}\n• Title: *${episode.title}*\n\n*Available Video Qualities & Streams:*\n`;
+
+    if (episode.video_assets && episode.video_assets.length > 0) {
+      episode.video_assets.forEach(va => {
+        forwardMsg += `• *${va.quality}*: [Stream Link](${va.stream_url})\n`;
+      });
+    } else if (episode.stream_url) {
+      forwardMsg += `• *Default (${episode.quality || '1080p'})*: [Stream Link](${episode.stream_url})\n`;
+    }
+
+    await sendTelegramMessage(botToken, chatId, forwardMsg);
+
+    // If telegram file ids exist, forward video messages directly to chat
+    if (episode.video_assets && episode.video_assets.length > 0) {
+      for (const va of episode.video_assets) {
+        if (va.telegram_file_id) {
+          try {
+            await fetch(`https://api.telegram.org/bot${botToken}/sendVideo`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                chat_id: chatId,
+                video: va.telegram_file_id,
+                caption: `📹 *${anime.title}* S${seasonNum} E${epNum} (${va.quality})`
+              })
+            });
+          } catch {}
+        }
+      }
+    } else if (episode.telegram_file_id) {
+      try {
+        await fetch(`https://api.telegram.org/bot${botToken}/sendVideo`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            chat_id: chatId,
+            video: episode.telegram_file_id,
+            caption: `📹 *${anime.title}* S${seasonNum} E${epNum}`
+          })
+        });
+      } catch {}
+    }
     return;
   }
 
@@ -220,8 +395,8 @@ Ab episode upload karne ke liye video bhejien. Caption:
       if (parts.length < 3) {
         await sendTelegramMessage(botToken, chatId, `
 ❌ *Invalid Caption Format!*
-Format: \`/ep <anime_id> <season_num> <ep_num> <Episode Title>\`
-Example: \`/ep anime_1790000 1 1 The Beginning\`
+Format: \`/ep <anime_id> <season_num> <ep_num> [quality] <Episode Title>\`
+Example: \`/ep anime_12345 1 1 1080p Episode 1 Title\`
         `);
         return;
       }
@@ -229,10 +404,19 @@ Example: \`/ep anime_1790000 1 1 The Beginning\`
       const animeId = parts[0];
       const seasonNum = parseInt(parts[1]) || 1;
       const epNum = parseInt(parts[2]) || 1;
-      const epTitle = parts.slice(3).join(' ') || `Episode ${epNum}`;
+
+      let quality = '1080p';
+      let titleStartIdx = 3;
+
+      if (parts[3] && ['480p', '720p', '1080p', '360p', '4k'].includes(parts[3].toLowerCase())) {
+        quality = parts[3];
+        titleStartIdx = 4;
+      }
+
+      const epTitle = parts.slice(titleStartIdx).join(' ') || `Episode ${epNum}`;
 
       const catalog = await getCatalog(env);
-      const anime = catalog.anime.find(a => a.id === animeId);
+      const anime = (catalog.anime || []).find(a => a.id === animeId);
 
       if (!anime) {
         await sendTelegramMessage(botToken, chatId, `❌ Anime with ID \`${animeId}\` not found! Use \`/listanime\` to check IDs.`);
@@ -255,41 +439,70 @@ Example: \`/ep anime_1790000 1 1 The Beginning\`
       }
 
       season.episodes = season.episodes || [];
-      const epId = `ep_${seasonNum}_${epNum}_${Date.now()}`;
-      const newEpisode = {
-        id: epId,
-        anime_id: animeId,
-        season_id: season.id,
-        episode_number: epNum,
-        title: epTitle,
-        description: `${anime.title} Season ${seasonNum} Episode ${epNum}`,
-        duration_seconds: file.duration || 1440,
-        thumbnail_url: anime.poster_url,
+      let episode = season.episodes.find(e => e.episode_number === epNum);
+
+      if (!episode) {
+        episode = {
+          id: `ep_${seasonNum}_${epNum}_${Date.now()}`,
+          anime_id: animeId,
+          season_id: season.id,
+          episode_number: epNum,
+          title: epTitle,
+          description: `${anime.title} Season ${seasonNum} Episode ${epNum}`,
+          duration_seconds: file.duration || 1440,
+          thumbnail_url: anime.poster_url,
+          stream_url: streamUrl,
+          telegram_file_id: fileId,
+          quality: quality,
+          view_count: 0,
+          is_published: true,
+          distribution_rights_confirmed: true,
+          video_assets: []
+        };
+        season.episodes.push(episode);
+      } else {
+        episode.title = epTitle || episode.title;
+      }
+
+      episode.video_assets = episode.video_assets || [];
+      const assetIdx = episode.video_assets.findIndex(va => va.quality === quality);
+      const newAsset = {
+        id: `va_${quality}_${Date.now()}`,
+        parent_type: 'episode',
+        parent_id: episode.id,
+        quality: quality,
+        storage_key: fileId,
         stream_url: streamUrl,
         telegram_file_id: fileId,
-        view_count: 0,
-        is_published: true,
-        distribution_rights_confirmed: true
+        duration_seconds: file.duration || 1440,
+        file_size_bytes: file.file_size || 0
       };
 
-      const existingIdx = season.episodes.findIndex(e => e.episode_number === epNum);
-      if (existingIdx >= 0) {
-        season.episodes[existingIdx] = newEpisode;
+      if (assetIdx >= 0) {
+        episode.video_assets[assetIdx] = newAsset;
       } else {
-        season.episodes.push(newEpisode);
+        episode.video_assets.push(newAsset);
+      }
+
+      // If requested quality is 1080p or default, update primary episode stream_url
+      if (quality === '1080p' || !episode.stream_url) {
+        episode.stream_url = streamUrl;
+        episode.telegram_file_id = fileId;
+        episode.quality = quality;
       }
 
       await saveCatalog(env, catalog);
 
       await sendTelegramMessage(botToken, chatId, `
-🎉 *Episode Added & Saved to Cloudflare!*
+🎉 *Episode (${quality}) Saved to Cloudflare!*
 
 • Anime: *${anime.title}*
-• Season: *${seasonNum}* | Episode: *${epNum}*
-• Title: *${epTitle}*
-• Stream URL: \`${streamUrl}\`
+• Season ${seasonNum} | Episode ${epNum}: *${episode.title}*
+• Quality Added: *${quality}*
+• Stream Link: \`${streamUrl}\`
 
-Episode live ho gaya hai website/mini-app par! 🚀
+Live on mini-app/website! Video forward karne ke liye command use karein:
+\`/forward ${animeId} ${seasonNum} ${epNum}\`
       `);
       return;
     }
@@ -297,8 +510,8 @@ Episode live ho gaya hai website/mini-app par! 🚀
     await sendTelegramMessage(botToken, chatId, `
 📹 *Video File Received!*
 
-Episode ko catalog me save karne ke liye video par reply karein ya caption ke saath bhejien:
-\`/ep <anime_id> <season_num> <ep_num> <Episode Title>\`
+Episode ko save karne ke liye video par reply karein ya caption ke saath bhejien:
+\`/ep <anime_id> <season_num> <ep_num> [480p|720p|1080p] <Episode Title>\`
 
 *Stream Link Generated:*
 \`${streamUrl}\`
