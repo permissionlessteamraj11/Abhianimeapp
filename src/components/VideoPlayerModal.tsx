@@ -137,7 +137,10 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
   // Player controls
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
   const [currentTime, setCurrentTime] = useState<number>(initialPositionSeconds);
-  const [duration, setDuration] = useState<number>(isMovie ? content.runtime_minutes * 60 : 1440);
+  const [duration, setDuration] = useState<number>(() => {
+    if (isMovie) return (content as Movie).runtime_minutes * 60;
+    return initialEpisode?.duration_seconds || 0;
+  });
   const [isMuted, setIsMuted] = useState<boolean>(false);
   const [playbackSpeed, setPlaybackSpeed] = useState<number>(1);
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
@@ -167,9 +170,20 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
   // Resume position
   const [hasResumedPosition, setHasResumedPosition] = useState<boolean>(false);
 
+  // Sync duration when episode or movie changes
+  useEffect(() => {
+    if (isMovie) {
+      if ((content as Movie).runtime_minutes) {
+        setDuration((content as Movie).runtime_minutes * 60);
+      }
+    } else if (currentEpisode?.duration_seconds) {
+      setDuration(currentEpisode.duration_seconds);
+    }
+  }, [content, currentEpisode, isMovie]);
+
   // Action Buttons state
-  const [likesCount, setLikesCount] = useState<number>(1420);
-  const [dislikesCount, setDislikesCount] = useState<number>(12);
+  const [likesCount, setLikesCount] = useState<number>(0);
+  const [dislikesCount, setDislikesCount] = useState<number>(0);
   const [hasLiked, setHasLiked] = useState<boolean>(false);
   const [hasDisliked, setHasDisliked] = useState<boolean>(false);
   const [isSavedInWatchlist, setIsSavedInWatchlist] = useState<boolean>(false);
@@ -450,11 +464,19 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
 
   const handleLoadedMetadata = () => {
     if (videoRef.current) {
-      setDuration(videoRef.current.duration);
+      if (!isNaN(videoRef.current.duration) && videoRef.current.duration > 0) {
+        setDuration(videoRef.current.duration);
+      }
       if (initialPositionSeconds > 0 && !hasResumedPosition) {
         videoRef.current.currentTime = initialPositionSeconds;
         setHasResumedPosition(true);
       }
+    }
+  };
+
+  const handleDurationChange = () => {
+    if (videoRef.current && !isNaN(videoRef.current.duration) && videoRef.current.duration > 0) {
+      setDuration(videoRef.current.duration);
     }
   };
 
@@ -535,7 +557,7 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
       setDislikesCount((prev) => Math.max(0, prev - 1));
     } else {
       setHasDisliked(true);
-      setDislikesCount((prev) => Math.max(0, prev - 1));
+      setDislikesCount((prev) => prev + 1);
       if (hasLiked) {
         setHasLiked(false);
         setLikesCount((prev) => Math.max(0, prev - 1));
@@ -640,6 +662,7 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
             onPause={() => setIsPlaying(false)}
             onTimeUpdate={handleTimeUpdate}
             onLoadedMetadata={handleLoadedMetadata}
+            onDurationChange={handleDurationChange}
             onEnded={handleVideoEnded}
             onError={() => {
               if (parsedStream.type !== 'embed') {
