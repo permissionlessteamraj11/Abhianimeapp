@@ -3,6 +3,7 @@
   "appId": "1:742779253916:web:b98c6e1cfeb7e164cbe959",
   "apiKey": "AIzaSyBwwkgwmm0G0a-diZaVv8fqYFM3Y9T0eV4",
   "authDomain": "anime-848cf.firebaseapp.com",
+  "firestoreDatabaseId": "ai-studio-animestreammini-f70b47f3-b562-42f4-9bc4-0f3dda1a5fa8",
   "storageBucket": "anime-848cf.firebasestorage.app",
   "messagingSenderId": "742779253916",
   "measurementId": "",

@@ -253,19 +253,7 @@ class DatabaseEngine {
       hero_banners: [],
       homepage_sections: DEFAULT_SECTIONS,
       settings: DEFAULT_SETTINGS,
-      users: [
-        {
-          id: 'usr-849204812',
-          telegram_id: 849204812,
-          first_name: 'Ren',
-          last_name: 'Kurogane',
-          username: 'ren_kuro',
-          language_code: 'en',
-          is_suspended: false,
-          created_at: new Date().toISOString(),
-          last_active_at: new Date().toISOString()
-        }
-      ],
+      users: [],
       saved_items: [],
       watch_progress: [],
       audit_logs: [],
@@ -431,7 +419,9 @@ class DatabaseEngine {
       categories: Array.isArray(animeData.categories) ? animeData.categories : ['all', 'anime'],
       placements: Array.isArray(animeData.placements) ? animeData.placements : (animeData.placements ? [animeData.placements] : []),
       section_ids: Array.isArray(animeData.section_ids) ? animeData.section_ids : [],
-      seasons: Array.isArray(animeData.seasons) ? animeData.seasons : [],
+      seasons: Array.isArray(animeData.seasons) && animeData.seasons.length > 0
+        ? animeData.seasons
+        : (existingIdx >= 0 && Array.isArray(this.db.anime[existingIdx].seasons) ? this.db.anime[existingIdx].seasons : []),
       updated_at: new Date().toISOString()
     };
 
@@ -531,24 +521,49 @@ class DatabaseEngine {
   public saveEpisode(animeId: string, seasonId: string, episodeData: any): any {
     const anime = this.getAnimeById(animeId);
     if (!anime) throw new Error('Anime series not found');
-    const season = anime.seasons?.find((s: any) => s.id === seasonId);
-    if (!season) throw new Error('Season not found');
+    if (!anime.seasons) anime.seasons = [];
+
+    let season = anime.seasons.find((s: any) => s.id === seasonId);
+    if (!season && anime.seasons.length > 0) {
+      season = anime.seasons[0];
+    }
+    if (!season) {
+      season = {
+        id: seasonId || `s-${Date.now()}`,
+        anime_id: animeId,
+        season_number: 1,
+        title: 'Season 1',
+        description: '',
+        is_published: true,
+        episodes: []
+      };
+      anime.seasons.push(season);
+    }
 
     if (!season.episodes) season.episodes = [];
     const episodeId = episodeData.id || `ep-${Date.now()}`;
     const idx = season.episodes.findIndex((e: any) => e.id === episodeId);
 
+    const streamUrls = episodeData.stream_urls && typeof episodeData.stream_urls === 'object' ? episodeData.stream_urls : {};
+    const mainStreamUrl =
+      episodeData.stream_url ||
+      streamUrls['1080p'] ||
+      streamUrls['720p'] ||
+      streamUrls['480p'] ||
+      '';
+
     const epRecord = {
       ...episodeData,
       id: episodeId,
       anime_id: animeId,
-      season_id: seasonId,
+      season_id: season.id,
       episode_number: Number(episodeData.episode_number) || season.episodes.length + 1,
       title: episodeData.title || `Episode ${episodeData.episode_number || season.episodes.length + 1}`,
       description: episodeData.description || '',
       duration_seconds: Number(episodeData.duration_seconds) || 1440,
       thumbnail_url: episodeData.thumbnail_url || anime.backdrop_url || '/images/hero_cyber_samurai.jpg',
-      stream_url: episodeData.stream_url || '',
+      stream_url: mainStreamUrl,
+      stream_urls: streamUrls,
       is_published: episodeData.is_published !== false,
       distribution_rights_confirmed: true,
       view_count: episodeData.view_count || 0
@@ -560,7 +575,7 @@ class DatabaseEngine {
       season.episodes.push(epRecord);
     }
 
-    this.queueSave('EPISODE_SAVED', { animeId, seasonId, episodeId });
+    this.queueSave('EPISODE_SAVED', { animeId, seasonId: season.id, episodeId });
     return season.episodes;
   }
 

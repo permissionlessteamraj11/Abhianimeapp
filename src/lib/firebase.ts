@@ -1,19 +1,24 @@
 import { initializeApp } from 'firebase/app';
 import {
   getFirestore,
+  setLogLevel,
   doc,
   getDoc,
   getDocFromServer,
   setDoc,
-  deleteDoc,
-  collection,
-  getDocs,
   onSnapshot
 } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
 
+// Suppress noisy internal @firebase/firestore offline/timeout console.error logs
+try {
+  setLogLevel('silent');
+} catch {
+  // Ignore if already set
+}
+
 export const app = initializeApp(firebaseConfig);
-export const db = getFirestore(app);
+export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
 
 export enum OperationType {
   CREATE = 'create',
@@ -51,6 +56,38 @@ export async function testConnection(): Promise<boolean> {
       console.warn('[Firebase Firestore] Client is offline, cached persistence active.');
     }
     return false;
+  }
+}
+
+// Fetch master catalog once from Firestore
+export async function fetchMasterCatalogFromFirestore(): Promise<{
+  anime: any[];
+  movies: any[];
+  heroBanners: any[];
+  homepageSections: any[];
+  categories: any[];
+  genres: any[];
+  settings: any;
+} | null> {
+  try {
+    const catalogDocRef = doc(db, 'catalog', 'master');
+    const snapshot = await getDoc(catalogDocRef);
+    if (snapshot.exists()) {
+      const raw = snapshot.data();
+      return {
+        anime: Array.isArray(raw.anime) ? raw.anime : [],
+        movies: Array.isArray(raw.movies) ? raw.movies : [],
+        heroBanners: Array.isArray(raw.hero_banners) ? raw.hero_banners : [],
+        homepageSections: Array.isArray(raw.homepage_sections) ? raw.homepage_sections : [],
+        categories: Array.isArray(raw.categories) ? raw.categories : [],
+        genres: Array.isArray(raw.genres) ? raw.genres : [],
+        settings: raw.settings || null
+      };
+    }
+    return null;
+  } catch (err) {
+    handleFirestoreError(err, OperationType.GET, 'catalog/master');
+    return null;
   }
 }
 
@@ -95,6 +132,11 @@ export function subscribeToCatalog(
   }
 }
 
+// Deep-clean undefined properties before sending to Firestore
+function sanitizeForFirestore<T>(obj: T): T {
+  return JSON.parse(JSON.stringify(obj));
+}
+
 // Push master catalog to Firestore
 export async function pushMasterCatalogToFirestore(catalogData: {
   anime?: any[];
@@ -107,14 +149,11 @@ export async function pushMasterCatalogToFirestore(catalogData: {
 }) {
   try {
     const catalogDocRef = doc(db, 'catalog', 'master');
-    await setDoc(
-      catalogDocRef,
-      {
-        ...catalogData,
-        last_updated_at: new Date().toISOString()
-      },
-      { merge: true }
-    );
+    const cleanData = sanitizeForFirestore({
+      ...catalogData,
+      last_updated_at: new Date().toISOString()
+    });
+    await setDoc(catalogDocRef, cleanData, { merge: true });
     console.log('[Firebase Firestore] Real-time master catalog synchronized.');
   } catch (err) {
     handleFirestoreError(err, OperationType.WRITE, 'catalog/master');

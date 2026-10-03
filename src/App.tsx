@@ -152,7 +152,7 @@ export default function App() {
       setCurrentUser(profile.user);
       setContinueWatching(profile.continueWatching || []);
     } catch (err: any) {
-      console.error('Error loading initial app data:', err);
+      console.warn('Error loading initial app data:', err);
       showToast('error', err.message || 'Failed to connect to streaming gateway.');
     } finally {
       setIsLoadingHome(false);
