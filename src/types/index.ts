@@ -92,6 +92,7 @@ export interface Episode {
   thumbnail_url: string;
   duration_seconds: number;
   stream_url?: string;
+  stream_urls?: Record<string, string>;
   release_date?: string;
   distribution_rights_confirmed: boolean;
   rights_confirmed_by?: string;
@@ -102,6 +103,7 @@ export interface Episode {
   codec?: string;
   color_depth?: string;
   audio_language?: string;
+  audio_type?: string;
   subtitle_language?: string;
   file_size?: string;
   video_assets?: VideoAsset[];

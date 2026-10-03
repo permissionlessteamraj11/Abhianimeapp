@@ -1,41 +1,50 @@
 /**
  * Stark Anime - Standalone Node.js / Bun Telegram Bot Runner (Long Polling Mode)
- * Bot Token: 8832195140:AAHgKP4G8N8lSUuBf7vRk3EUs35lo1YHFwQ
- * API ID: 37729457 | API Hash: bb68973b7efcbbd074cda984c95502d6
+ * Connected directly to Neon PostgreSQL Database
  */
 
 import http from 'http';
-import fs from 'fs';
-import path from 'path';
+import pg from 'pg';
 
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || "8832195140:AAHgKP4G8N8lSUuBf7vRk3EUs35lo1YHFwQ";
 const PORT = process.env.BOT_PORT || 3005;
-const DB_PATH = path.resolve('data/stark_anime.db.json');
+const DB_CONN_STRING = process.env.DATABASE_URL || process.env.POSTGRES_URL || "postgresql://neondb_owner:npg_UaFhV4xQkoK3@ep-dry-shadow-ayej0k9w-pooler.c-5.us-east-2.aws.neon.tech/neondb?sslmode=require";
 
 console.log("=================================================");
-console.log("🚀 Starting Stark Anime Telegram Bot Engine...");
+console.log("🚀 Starting Stark Telegram Bot Engine (Neon DB)...");
 console.log(`• Bot Token: ${BOT_TOKEN.slice(0, 12)}...`);
 console.log(`• Local Port: ${PORT}`);
 console.log("=================================================");
 
-function loadDb() {
+const pool = new pg.Pool({
+  connectionString: DB_CONN_STRING,
+  ssl: { rejectUnauthorized: false }
+});
+
+async function loadDb() {
   try {
-    if (fs.existsSync(DB_PATH)) {
-      return JSON.parse(fs.readFileSync(DB_PATH, 'utf8'));
+    const res = await pool.query("SELECT data FROM public.stark_catalog WHERE id = 'master_catalog';");
+    if (res.rows.length > 0 && res.rows[0].data) {
+      return res.rows[0].data;
     }
   } catch (err) {
-    console.error('Error reading DB:', err);
+    console.error('[Bot Engine] Error loading from Neon DB:', err);
   }
   return { version: 1, anime: [], movies: [], hero_banners: [] };
 }
 
-function saveDb(db) {
+async function saveDb(db) {
   try {
     db.version = (db.version || 1) + 1;
     db.last_updated_at = new Date().toISOString();
-    fs.writeFileSync(DB_PATH, JSON.stringify(db, null, 2), 'utf8');
+    await pool.query(
+      `INSERT INTO public.stark_catalog (id, data, updated_at) VALUES ('master_catalog', $1, NOW())
+       ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data, updated_at = NOW();`,
+      [JSON.stringify(db)]
+    );
+    console.log(`[Bot Engine] Saved updated catalog v${db.version} to Neon DB.`);
   } catch (err) {
-    console.error('Error saving DB:', err);
+    console.error('[Bot Engine] Error saving to Neon DB:', err);
   }
 }
 
@@ -63,7 +72,7 @@ async function handleUpdate(update) {
 
   if (text.startsWith('/start')) {
     await sendTelegramMessage(chatId, `
-⚡ *Stark Anime - Episode & Video Upload Bot*
+⚡ *STARK - Episode & Video Upload Bot*
 
 Welcome! Is bot se aap Anime Series, Seasons aur Episodes direct upload & control kar sakte ho. Multi-quality (480p, 720p, 1080p) videos control ho jayengi.
 
@@ -77,14 +86,14 @@ Welcome! Is bot se aap Anime Series, Seasons aur Episodes direct upload & contro
 
 *Video Uploading / Forwarding:*
 Kisi bhi 480p, 720p, 1080p video ko bot me bhejien/forward karein aur caption me likhein:
-\`/ep <anime_id> <season_num> <ep_num> <quality> <Episode Title>\`
-_Example:_ \`/ep anime_12345 1 1 1080p Episode 1 The Beginning\`
+\`/ep <anime_id> <season_num> <ep_num> <quality> [official|fandub] <Episode Title>\`
+_Example:_ \`/ep anime_12345 1 1 1080p official Episode 1 The Beginning\`
     `);
     return;
   }
 
   if (text.startsWith('/status')) {
-    const db = loadDb();
+    const db = await loadDb();
     let totalEps = 0;
     (db.anime || []).forEach(a => {
       a.seasons?.forEach(s => {
@@ -93,11 +102,12 @@ _Example:_ \`/ep anime_12345 1 1 1080p Episode 1 The Beginning\`
     });
 
     await sendTelegramMessage(chatId, `
-📊 *Stark Anime Storage Status*
+📊 *STARK Neon Storage Status*
 • Total Anime: *${db.anime?.length || 0}*
 • Total Movies: *${db.movies?.length || 0}*
 • Total Episodes: *${totalEps}*
 • Database Version: *v${db.version || 1}*
+• Storage Mode: *Neon PostgreSQL Cloud DB*
     `);
     return;
   }
@@ -112,7 +122,7 @@ _Example:_ \`/ep anime_12345 1 1 1080p Episode 1 The Beginning\`
       return;
     }
 
-    const db = loadDb();
+    const db = await loadDb();
     db.anime = db.anime || [];
     const animeId = `anime_${Date.now()}`;
     const newAnime = {
@@ -120,14 +130,14 @@ _Example:_ \`/ep anime_12345 1 1 1080p Episode 1 The Beginning\`
       title: title,
       slug: title.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
       description: `${title} anime series.`,
-      poster_url: '/images/stark_anime_logo_1790699252710.jpg',
-      backdrop_url: '/images/stark_anime_logo_1790699252710.jpg',
+      poster_url: '/stark-logo.jpg',
+      backdrop_url: '/stark-logo.jpg',
       rating: 9.0,
       release_year: new Date().getFullYear(),
       status: 'Ongoing',
       classification: 'PG-13',
-      language: 'Japanese',
-      available_audio: ['Japanese', 'Hindi', 'English'],
+      language: 'Hindi',
+      available_audio: ['Hindi (Official)', 'Japanese (Sub)'],
       available_subtitles: ['English', 'Hindi'],
       distribution_rights_confirmed: true,
       is_published: true,
@@ -147,22 +157,22 @@ _Example:_ \`/ep anime_12345 1 1 1080p Episode 1 The Beginning\`
     };
 
     db.anime.push(newAnime);
-    saveDb(db);
+    await saveDb(db);
 
     await sendTelegramMessage(chatId, `
-✅ *Anime Created Successfully!*
+✅ *Anime Created Successfully in Neon Database!*
 • Title: *${title}*
 • Anime ID: \`${animeId}\`
 • Default Season: \`Season 1\`
 
 Video bhejien aur caption:
-\`/ep ${animeId} 1 1 1080p Episode 1 Title\`
+\`/ep ${animeId} 1 1 1080p official Episode 1 Title\`
     `);
     return;
   }
 
   if (text.startsWith('/listanime')) {
-    const db = loadDb();
+    const db = await loadDb();
     const animeList = db.anime || [];
     if (animeList.length === 0) {
       await sendTelegramMessage(chatId, "ℹ️ No anime in catalog. Create one with \`/addanime <Title>\`.");
@@ -191,7 +201,7 @@ Video bhejien aur caption:
     const field = parts[1].toLowerCase();
     const value = parts.slice(2).join(' ');
 
-    const db = loadDb();
+    const db = await loadDb();
     const anime = (db.anime || []).find(a => a.id === animeId);
 
     if (!anime) {
@@ -213,7 +223,7 @@ Video bhejien aur caption:
       return;
     }
 
-    saveDb(db);
+    await saveDb(db);
     await sendTelegramMessage(chatId, `✅ *Anime Updated!* Field *${field}* set to: ${value}`);
     return;
   }
@@ -232,7 +242,7 @@ Video bhejien aur caption:
     const field = parts[3].toLowerCase();
     const value = parts.slice(4).join(' ');
 
-    const db = loadDb();
+    const db = await loadDb();
     const anime = (db.anime || []).find(a => a.id === animeId);
     const season = anime?.seasons?.find(s => s.season_number === seasonNum);
     const episode = season?.episodes?.find(e => e.episode_number === epNum);
@@ -251,7 +261,7 @@ Video bhejien aur caption:
       return;
     }
 
-    saveDb(db);
+    await saveDb(db);
     await sendTelegramMessage(chatId, `✅ *Episode S${seasonNum} E${epNum} Updated!* ${field} = ${value}`);
     return;
   }
@@ -268,7 +278,7 @@ Video bhejien aur caption:
     const seasonNum = parseInt(parts[1]) || 1;
     const epNum = parseInt(parts[2]) || 1;
 
-    const db = loadDb();
+    const db = await loadDb();
     const anime = (db.anime || []).find(a => a.id === animeId);
     const season = anime?.seasons?.find(s => s.season_number === seasonNum);
     const episode = season?.episodes?.find(e => e.episode_number === epNum);
@@ -278,7 +288,7 @@ Video bhejien aur caption:
       return;
     }
 
-    let forwardMsg = `🎬 *${anime.title}* - Season ${seasonNum} Episode ${epNum}\n• Title: *${episode.title}*\n\n*Available Video Qualities & Streams:*\n`;
+    let forwardMsg = `🎬 *${anime.title}* - Season ${seasonNum} Episode ${epNum}\n• Title: *${episode.title}*\n• Audio Type: *${episode.audio_type || 'Official Dub'}*\n\n*Available Video Qualities & Streams:*\n`;
 
     if (episode.video_assets && episode.video_assets.length > 0) {
       episode.video_assets.forEach(va => {
@@ -331,7 +341,7 @@ Video bhejien aur caption:
       const parts = text.split(' ');
       parts.shift();
       if (parts.length < 3) {
-        await sendTelegramMessage(chatId, "❌ Caption format: `/ep <anime_id> <season_num> <ep_num> [480p|720p|1080p] <Episode Title>`");
+        await sendTelegramMessage(chatId, "❌ Caption format: `/ep <anime_id> <season_num> <ep_num> [480p|720p|1080p] [official|fandub] <Episode Title>`");
         return;
       }
 
@@ -340,6 +350,7 @@ Video bhejien aur caption:
       const epNum = parseInt(parts[2]) || 1;
 
       let quality = '1080p';
+      let audioType = 'Official Dub';
       let titleStartIdx = 3;
 
       if (parts[3] && ['480p', '720p', '1080p', '360p', '4k'].includes(parts[3].toLowerCase())) {
@@ -347,9 +358,15 @@ Video bhejien aur caption:
         titleStartIdx = 4;
       }
 
+      if (parts[titleStartIdx] && ['official', 'fandub', 'subbed'].includes(parts[titleStartIdx].toLowerCase())) {
+        const at = parts[titleStartIdx].toLowerCase();
+        audioType = at === 'fandub' ? 'Fan Dub' : at === 'subbed' ? 'Subbed' : 'Official Dub';
+        titleStartIdx += 1;
+      }
+
       const epTitle = parts.slice(titleStartIdx).join(' ') || `Episode ${epNum}`;
 
-      const db = loadDb();
+      const db = await loadDb();
       const anime = (db.anime || []).find(a => a.id === animeId);
 
       if (!anime) {
@@ -384,10 +401,12 @@ Video bhejien aur caption:
           title: epTitle,
           description: `${anime.title} S${seasonNum} E${epNum}`,
           duration_seconds: file.duration || 1440,
-          thumbnail_url: anime.poster_url,
+          thumbnail_url: anime.poster_url || '/stark-logo.jpg',
           stream_url: streamUrl,
+          stream_urls: { [quality]: streamUrl },
           telegram_file_id: fileId,
           quality: quality,
+          audio_type: audioType,
           view_count: 0,
           is_published: true,
           distribution_rights_confirmed: true,
@@ -396,6 +415,9 @@ Video bhejien aur caption:
         season.episodes.push(episode);
       } else {
         episode.title = epTitle || episode.title;
+        episode.audio_type = audioType || episode.audio_type;
+        episode.stream_urls = episode.stream_urls || {};
+        episode.stream_urls[quality] = streamUrl;
       }
 
       episode.video_assets = episode.video_assets || [];
@@ -424,14 +446,15 @@ Video bhejien aur caption:
         episode.quality = quality;
       }
 
-      saveDb(db);
+      await saveDb(db);
 
       await sendTelegramMessage(chatId, `
-🎉 *Episode (${quality}) Uploaded Successfully!*
+🎉 *Episode (${quality} - ${audioType}) Uploaded Permanently to Neon DB!*
 • Anime: *${anime.title}*
 • Season ${seasonNum} | Episode ${epNum}: *${episode.title}*
 • Quality Added: *${quality}*
-• Episode live on website!
+• Audio Dub: *${audioType}*
+• Episode live on STARK website!
 
 Video forward karne ke liye command send karein:
 \`/forward ${animeId} ${seasonNum} ${epNum}\`
@@ -442,7 +465,7 @@ Video forward karne ke liye command send karein:
     await sendTelegramMessage(chatId, `
 📹 *Video File Received!*
 To attach to anime, reply with caption:
-\`/ep <anime_id> <season_num> <ep_num> [480p|720p|1080p] <Episode Title>\`
+\`/ep <anime_id> <season_num> <ep_num> [480p|720p|1080p] [official|fandub] <Episode Title>\`
     `);
     return;
   }
@@ -467,9 +490,9 @@ pollTelegram();
 
 const server = http.createServer((req, res) => {
   res.writeHead(200, { 'Content-Type': 'application/json' });
-  res.end(JSON.stringify({ status: 'active', bot_token: BOT_TOKEN.slice(0, 10) + '...' }));
+  res.end(JSON.stringify({ status: 'active', database: 'Neon PostgreSQL', bot_token: BOT_TOKEN.slice(0, 10) + '...' }));
 });
 
 server.listen(PORT, () => {
-  console.log(`[Stark Anime Bot] Running and listening for Telegram updates!`);
+  console.log(`[STARK Bot] Running and listening for Telegram updates! Connected to Neon DB.`);
 });
