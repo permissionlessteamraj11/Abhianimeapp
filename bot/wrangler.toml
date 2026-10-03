@@ -1,9 +1,6 @@
 name = "abhianimeapp"
 main = "worker.js"
-compatibility_date = "2024-01-01"
-
-[build]
-command = ""
+compatibility_date = "2024-09-23"
 
 [vars]
 TELEGRAM_BOT_TOKEN = "8832195140:AAHgKP4G8N8lSUuBf7vRk3EUs35lo1YHFwQ"

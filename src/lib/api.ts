@@ -1306,8 +1306,8 @@ export const api = {
       try {
         const res = await fetch(apiUrl('/api/sync/version'));
         if (res.ok) {
-          const data = await res.json();
-          if (typeof data.version === 'number') {
+          const data = (await res.json()) as { version?: number };
+          if (typeof data?.version === 'number') {
             if (lastKnownVersion !== null && data.version > lastKnownVersion) {
               onUpdate({ type: 'POLL_SYNC', version: data.version });
             }

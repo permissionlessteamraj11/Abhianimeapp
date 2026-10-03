@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import pg from 'pg';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -12,7 +13,7 @@ const BACKUPS_DIR = path.resolve(DATA_DIR, 'backups');
 const DB_FILE = path.resolve(DATA_DIR, 'stark_anime.db.json');
 const BUNDLED_DB_FILE = path.resolve(__dirname, '../data/stark_anime.db.json');
 
-// Ensure directories exist safely without throwing on read-only environments
+// Ensure local directories exist safely
 try {
   if (!fs.existsSync(DATA_DIR)) {
     fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -131,14 +132,95 @@ const MASTER_SEED_ANIME: any[] = [];
 const MASTER_SEED_MOVIES: any[] = [];
 const MASTER_SEED_BANNERS: any[] = [];
 
+// Neon / PostgreSQL Connection Setup
+const dbConnectionString = process.env.DATABASE_URL || process.env.POSTGRES_URL || '';
+let pgPool: pg.Pool | null = null;
+
+if (dbConnectionString) {
+  try {
+    const { Pool } = pg;
+    pgPool = new Pool({
+      connectionString: dbConnectionString,
+      ssl: dbConnectionString.includes('sslmode=disable') ? false : { rejectUnauthorized: false }
+    });
+    console.log('[DatabaseEngine] Postgres connection pool initialized.');
+  } catch (err) {
+    console.warn('[DatabaseEngine] Could not initialize Postgres pool:', err);
+  }
+}
+
 class DatabaseEngine {
   private db: DatabaseSchema;
   private subscribers: Set<(event: { type: string; version: number; payload?: any }) => void> = new Set();
   private isSaving: boolean = false;
   private pendingSave: boolean = false;
+  private isPgConnected: boolean = false;
 
   constructor() {
     this.db = this.loadOrInitialize();
+    this.initPostgresSync();
+  }
+
+  private async initPostgresSync() {
+    if (!pgPool) return;
+    try {
+      const client = await pgPool.connect();
+      try {
+        // Ensure stark_catalog table exists
+        await client.query(`
+          CREATE TABLE IF NOT EXISTS public.stark_catalog (
+            id VARCHAR PRIMARY KEY,
+            data JSONB NOT NULL,
+            updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+          );
+        `);
+
+        // Check if master catalog exists in Postgres
+        const res = await client.query(`SELECT data FROM public.stark_catalog WHERE id = 'master_catalog';`);
+        if (res.rows.length > 0 && res.rows[0].data) {
+          const remoteData = res.rows[0].data;
+          if (remoteData && typeof remoteData.version === 'number') {
+            this.db = this.validateSchema(remoteData);
+            this.isPgConnected = true;
+            console.log(`[DatabaseEngine] Loaded database from Neon Postgres v${this.db.version} (${this.db.anime.length} anime, ${this.db.movies.length} movies)`);
+          }
+        } else {
+          // Push initial in-memory DB to Postgres
+          await client.query(
+            `INSERT INTO public.stark_catalog (id, data, updated_at) VALUES ('master_catalog', $1, NOW())
+             ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data, updated_at = NOW();`,
+            [JSON.stringify(this.db)]
+          );
+          this.isPgConnected = true;
+          console.log('[DatabaseEngine] Initialized Neon Postgres stark_catalog table with current catalog.');
+        }
+      } finally {
+        client.release();
+      }
+    } catch (err) {
+      console.warn('[DatabaseEngine] Postgres connection error, falling back to local file/memory storage:', err);
+      this.isPgConnected = false;
+    }
+  }
+
+  private validateSchema(parsed: any): DatabaseSchema {
+    return {
+      version: typeof parsed.version === 'number' ? parsed.version : 1,
+      last_updated_at: parsed.last_updated_at || new Date().toISOString(),
+      categories: Array.isArray(parsed.categories) && parsed.categories.length > 0 ? parsed.categories : DEFAULT_CATEGORIES,
+      genres: Array.isArray(parsed.genres) && parsed.genres.length > 0 ? parsed.genres : DEFAULT_GENRES,
+      anime: Array.isArray(parsed.anime) ? parsed.anime : [],
+      movies: Array.isArray(parsed.movies) ? parsed.movies : [],
+      hero_banners: Array.isArray(parsed.hero_banners) ? parsed.hero_banners : [],
+      homepage_sections: Array.isArray(parsed.homepage_sections) && parsed.homepage_sections.length > 0 ? parsed.homepage_sections : DEFAULT_SECTIONS,
+      settings: parsed.settings || DEFAULT_SETTINGS,
+      users: Array.isArray(parsed.users) ? parsed.users : [],
+      saved_items: Array.isArray(parsed.saved_items) ? parsed.saved_items : [],
+      watch_progress: Array.isArray(parsed.watch_progress) ? parsed.watch_progress : [],
+      audit_logs: Array.isArray(parsed.audit_logs) ? parsed.audit_logs : [],
+      copyright_claims: Array.isArray(parsed.copyright_claims) ? parsed.copyright_claims : [],
+      reports: Array.isArray(parsed.reports) ? parsed.reports : []
+    };
   }
 
   private loadOrInitialize(): DatabaseSchema {
@@ -152,25 +234,9 @@ class DatabaseEngine {
         const raw = fs.readFileSync(targetFile, 'utf-8');
         const parsed = JSON.parse(raw);
         if (parsed && typeof parsed.version === 'number') {
-          // Verify critical arrays
-          parsed.anime = Array.isArray(parsed.anime) ? parsed.anime : [];
-          parsed.movies = Array.isArray(parsed.movies) ? parsed.movies : [];
-          parsed.hero_banners = Array.isArray(parsed.hero_banners) ? parsed.hero_banners : [];
-          parsed.homepage_sections = Array.isArray(parsed.homepage_sections) && parsed.homepage_sections.length > 0 ? parsed.homepage_sections : DEFAULT_SECTIONS;
-          parsed.categories = Array.isArray(parsed.categories) && parsed.categories.length > 0 ? parsed.categories : DEFAULT_CATEGORIES;
-          parsed.genres = Array.isArray(parsed.genres) && parsed.genres.length > 0 ? parsed.genres : DEFAULT_GENRES;
-          parsed.settings = parsed.settings || DEFAULT_SETTINGS;
-          parsed.users = Array.isArray(parsed.users) ? parsed.users : [];
-          parsed.saved_items = Array.isArray(parsed.saved_items) ? parsed.saved_items : [];
-          parsed.watch_progress = Array.isArray(parsed.watch_progress) ? parsed.watch_progress : [];
-          parsed.audit_logs = Array.isArray(parsed.audit_logs) ? parsed.audit_logs : [];
-          parsed.copyright_claims = Array.isArray(parsed.copyright_claims) ? parsed.copyright_claims : [];
-          parsed.reports = Array.isArray(parsed.reports) ? parsed.reports : [];
-
-          // Empty database retained without fake seed data
-
-          console.log(`[DatabaseEngine] Loaded database v${parsed.version} (${parsed.anime.length} anime, ${parsed.movies.length} movies)`);
-          return parsed;
+          const validated = this.validateSchema(parsed);
+          console.log(`[DatabaseEngine] Loaded local database v${validated.version} (${validated.anime.length} anime, ${validated.movies.length} movies)`);
+          return validated;
         }
       }
     } catch (err) {
@@ -208,7 +274,7 @@ class DatabaseEngine {
     };
 
     this.persistSync(fresh);
-    console.log('[DatabaseEngine] Initialized brand new persistent database with master seed catalog.');
+    console.log('[DatabaseEngine] Initialized brand new persistent database.');
     return fresh;
   }
 
@@ -223,8 +289,20 @@ class DatabaseEngine {
       fs.writeFileSync(tmpFile, serialized, 'utf-8');
       fs.renameSync(tmpFile, DB_FILE);
     } catch (err) {
-      // In read-only serverless / Vercel runtime, in-memory state remains fully consistent
       console.warn('[DatabaseEngine] Notice: Disk persistence bypassed (read-only environment):', err);
+    }
+
+    // Async save to Neon Postgres if configured
+    if (pgPool) {
+      pgPool.query(
+        `INSERT INTO public.stark_catalog (id, data, updated_at) VALUES ('master_catalog', $1, NOW())
+         ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data, updated_at = NOW();`,
+        [JSON.stringify(data)]
+      ).then(() => {
+        this.isPgConnected = true;
+      }).catch((err) => {
+        console.warn('[DatabaseEngine] Neon Postgres background sync warning:', err?.message || err);
+      });
     }
   }
 
@@ -298,6 +376,7 @@ class DatabaseEngine {
 
     return {
       connected: true,
+      postgresConnected: this.isPgConnected || Boolean(pgPool),
       dbPath: DB_FILE,
       fileSizeBytes: fileSize,
       fileSizeKb: (fileSize / 1024).toFixed(2),
