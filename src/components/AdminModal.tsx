@@ -41,10 +41,15 @@ import {
   ChevronUp,
   Video,
   Layers,
-  CheckCircle2
+  CheckCircle2,
+  FileSpreadsheet,
+  ExternalLink
 } from 'lucide-react';
 import { haptic } from '../lib/telegram';
 import { StarkLogoBadge } from './StarkLogo';
+import { googleSignIn, initAuth, logoutGoogle } from '../lib/googleAuth';
+import { exportCatalogToGoogleSheets, importCatalogFromGoogleSheet, SheetImportResult } from '../lib/googleSheets';
+import type { User as FirebaseUser } from 'firebase/auth';
 
 interface AdminModalProps {
   onClose: () => void;
@@ -61,6 +66,7 @@ type AdminTab =
   | 'streaming'
   | 'users'
   | 'database'
+  | 'sheets'
   | 'audit'
   | 'settings';
 
@@ -80,6 +86,27 @@ export const AdminModal: React.FC<AdminModalProps> = ({ onClose, onRefreshCatalo
 
   // Active admin tab
   const [currentTab, setCurrentTab] = useState<AdminTab>('overview');
+
+  // Google Sheets state
+  const [googleUser, setGoogleUser] = useState<FirebaseUser | null>(null);
+  const [googleToken, setGoogleToken] = useState<string | null>(null);
+  const [isGoogleLoggingIn, setIsGoogleLoggingIn] = useState<boolean>(false);
+  const [sheetUrlOrId, setSheetUrlOrId] = useState<string>('');
+  const [isExportingSheet, setIsExportingSheet] = useState<boolean>(false);
+  const [isImportingSheet, setIsImportingSheet] = useState<boolean>(false);
+  const [sheetExportResult, setSheetExportResult] = useState<{ spreadsheetId: string; spreadsheetUrl: string } | null>(null);
+  const [sheetImportPreview, setSheetImportPreview] = useState<SheetImportResult | null>(null);
+  
+  // Mandatory confirmation dialog for Google Sheets operations
+  const [sheetConfirmDialog, setSheetConfirmDialog] = useState<{
+    isOpen: boolean;
+    title: string;
+    description: string;
+    itemCountText: string;
+    confirmButtonText: string;
+    confirmButtonColor?: string;
+    onConfirm: () => void;
+  } | null>(null);
 
   // Dashboard Stats & Data
   const [dashboardData, setDashboardData] = useState<any>(null);
@@ -133,6 +160,9 @@ export const AdminModal: React.FC<AdminModalProps> = ({ onClose, onRefreshCatalo
     duration_minutes: number;
     thumbnail_url: string;
     stream_url: string;
+    url_480p: string;
+    url_720p: string;
+    url_1080p: string;
     is_published: boolean;
   }>({
     episode_number: 1,
@@ -141,6 +171,9 @@ export const AdminModal: React.FC<AdminModalProps> = ({ onClose, onRefreshCatalo
     duration_minutes: 24,
     thumbnail_url: '',
     stream_url: '',
+    url_480p: '',
+    url_720p: '',
+    url_1080p: '',
     is_published: true
   });
 
@@ -195,6 +228,131 @@ export const AdminModal: React.FC<AdminModalProps> = ({ onClose, onRefreshCatalo
       loadAll();
     }
   }, [isLoggedIn]);
+
+  // Google Sheets OAuth Listener (Workspace Integration Skill)
+  useEffect(() => {
+    const unsub = initAuth(
+      (user, token) => {
+        setGoogleUser(user);
+        setGoogleToken(token);
+      },
+      () => {
+        setGoogleUser(null);
+        setGoogleToken(null);
+      }
+    );
+    return () => unsub();
+  }, []);
+
+  const handleGoogleSignIn = async () => {
+    setIsGoogleLoggingIn(true);
+    try {
+      const res = await googleSignIn();
+      if (res) {
+        setGoogleUser(res.user);
+        setGoogleToken(res.accessToken);
+        showNotification(`Connected to Google as ${res.user.email || res.user.displayName || 'Google User'}`);
+      }
+    } catch (err: any) {
+      showNotification('Google Sign-in failed: ' + (err.message || 'Unknown error'));
+    } finally {
+      setIsGoogleLoggingIn(false);
+    }
+  };
+
+  const handleGoogleLogout = async () => {
+    await logoutGoogle();
+    setGoogleUser(null);
+    setGoogleToken(null);
+    setSheetExportResult(null);
+    showNotification('Disconnected Google account.');
+  };
+
+  const handleRequestExportToSheets = () => {
+    if (!googleUser || !googleToken) {
+      showNotification('Please sign in with Google first.');
+      return;
+    }
+
+    const totalAnime = animeList.length;
+    let totalEps = 0;
+    animeList.forEach((a) => a.seasons?.forEach((s) => (totalEps += s.episodes?.length || 0)));
+    const totalMovies = movieList.length;
+
+    setSheetConfirmDialog({
+      isOpen: true,
+      title: 'Export Catalog to Google Sheets',
+      description: 'Create a brand new Google Spreadsheet in your personal Google Drive with all current anime, seasons, episodes (480p, 720p, 1080p URLs), and movies?',
+      itemCountText: `Items to Export: ${totalAnime} Anime Series (${totalEps} Episodes) and ${totalMovies} Feature Movies`,
+      confirmButtonText: 'Yes, Create & Export Sheet',
+      confirmButtonColor: 'bg-emerald-600 hover:bg-emerald-500',
+      onConfirm: async () => {
+        setSheetConfirmDialog(null);
+        setIsExportingSheet(true);
+        try {
+          const res = await exportCatalogToGoogleSheets(animeList, movieList);
+          setSheetExportResult(res);
+          showNotification('Catalog successfully exported to Google Sheets!');
+        } catch (err: any) {
+          showNotification(`Export failed: ${err.message}`);
+        } finally {
+          setIsExportingSheet(false);
+        }
+      }
+    });
+  };
+
+  const handleRequestImportFromSheets = async () => {
+    if (!googleUser || !googleToken) {
+      showNotification('Please sign in with Google first.');
+      return;
+    }
+    if (!sheetUrlOrId.trim()) {
+      showNotification('Please enter a Google Spreadsheet URL or ID.');
+      return;
+    }
+
+    setIsImportingSheet(true);
+    try {
+      const parsed = await importCatalogFromGoogleSheet(sheetUrlOrId.trim());
+      setSheetImportPreview(parsed);
+
+      setSheetConfirmDialog({
+        isOpen: true,
+        title: 'Import Catalog from Google Sheets',
+        description: 'Are you sure you want to import this data into the active database? All parsed titles, seasons, and multi-quality episode URLs will be synchronized in real-time across users.',
+        itemCountText: `Parsed from Sheet: ${parsed.stats.animeCount} Anime, ${parsed.stats.seasonCount} Seasons, ${parsed.stats.episodeCount} Episodes, and ${parsed.stats.movieCount} Movies`,
+        confirmButtonText: 'Confirm & Synchronize to App',
+        confirmButtonColor: 'bg-cyan-600 hover:bg-cyan-500',
+        onConfirm: async () => {
+          setSheetConfirmDialog(null);
+          try {
+            for (const item of parsed.anime) {
+              await api.adminSaveAnime(item);
+            }
+            for (const item of parsed.movies) {
+              await api.adminSaveMovie(item);
+            }
+
+            const updatedAnime = await api.adminGetAnime();
+            const updatedMovies = await api.adminGetMovies();
+            setAnimeList(updatedAnime);
+            setMovieList(updatedMovies);
+            onRefreshCatalog();
+            showNotification(`Imported ${parsed.stats.animeCount} anime and ${parsed.stats.movieCount} movies successfully!`);
+            setSheetImportPreview(null);
+            setSheetUrlOrId('');
+          } catch (saveErr: any) {
+            showNotification(`Failed to save items: ${saveErr.message}`);
+          }
+        }
+      });
+    } catch (err: any) {
+      showNotification(`Failed to read sheet: ${err.message}`);
+    } finally {
+      setIsImportingSheet(false);
+    }
+  };
 
   // Login handler: discreet, no password/username displayed in UI
   const handleLogin = async (e?: React.FormEvent, directUser?: string, directPass?: string) => {
@@ -287,15 +445,24 @@ export const AdminModal: React.FC<AdminModalProps> = ({ onClose, onRefreshCatalo
     if (!editingMovie) return;
 
     try {
+      const streamUrls: Record<string, string> = { ...(editingMovie.stream_urls || {}) };
+      if ((editingMovie as any).url_480p?.trim()) streamUrls['480p'] = (editingMovie as any).url_480p.trim();
+      if ((editingMovie as any).url_720p?.trim()) streamUrls['720p'] = (editingMovie as any).url_720p.trim();
+      if ((editingMovie as any).url_1080p?.trim()) streamUrls['1080p'] = (editingMovie as any).url_1080p.trim();
+
+      const mainUrl = editingMovie.stream_url?.trim() || streamUrls['1080p'] || streamUrls['720p'] || streamUrls['480p'] || '';
+
       await api.adminSaveMovie({
         ...editingMovie,
+        stream_url: mainUrl,
+        stream_urls: streamUrls,
         genres: editingMovie.genres && editingMovie.genres.length > 0 ? editingMovie.genres : ['Action'],
         placements: editingMovie.placements && editingMovie.placements.length > 0 ? editingMovie.placements : ['popular_movies', 'trending'],
         section_ids: editingMovie.section_ids || [],
         distribution_rights_confirmed: true,
         is_published: editingMovie.is_published !== false
       });
-      showNotification('Movie saved & broadcast to all user devices.');
+      showNotification('Movie saved with multi-quality streams & broadcast to all devices.');
       setEditingMovie(null);
       const updated = await api.adminGetMovies();
       setMovieList(updated);
@@ -403,6 +570,9 @@ export const AdminModal: React.FC<AdminModalProps> = ({ onClose, onRefreshCatalo
       duration_minutes: 24,
       thumbnail_url: season.episodes?.[0]?.thumbnail_url || anime.backdrop_url || anime.poster_url || '/images/hero_cyber_samurai.jpg',
       stream_url: '',
+      url_480p: '',
+      url_720p: '',
+      url_1080p: '',
       is_published: true
     });
   };
@@ -418,6 +588,9 @@ export const AdminModal: React.FC<AdminModalProps> = ({ onClose, onRefreshCatalo
       duration_minutes: Math.round((ep.duration_seconds || 1440) / 60),
       thumbnail_url: ep.thumbnail_url || '',
       stream_url: ep.stream_url || '',
+      url_480p: ep.stream_urls?.['480p'] || (ep.quality === '480p' ? ep.stream_url : '') || '',
+      url_720p: ep.stream_urls?.['720p'] || (ep.quality === '720p' ? ep.stream_url : '') || '',
+      url_1080p: ep.stream_urls?.['1080p'] || (ep.quality === '1080p' ? ep.stream_url : '') || '',
       is_published: ep.is_published ?? true
     });
   };
@@ -427,6 +600,29 @@ export const AdminModal: React.FC<AdminModalProps> = ({ onClose, onRefreshCatalo
     e.preventDefault();
     if (!editingEpisode) return;
     try {
+      const streamUrls: Record<string, string> = {};
+      if (episodeFormData.url_480p?.trim()) streamUrls['480p'] = episodeFormData.url_480p.trim();
+      if (episodeFormData.url_720p?.trim()) streamUrls['720p'] = episodeFormData.url_720p.trim();
+      if (episodeFormData.url_1080p?.trim()) streamUrls['1080p'] = episodeFormData.url_1080p.trim();
+
+      const mainUrl =
+        episodeFormData.stream_url?.trim() ||
+        streamUrls['1080p'] ||
+        streamUrls['720p'] ||
+        streamUrls['480p'] ||
+        '';
+
+      const videoAssets: any[] = [];
+      if (streamUrls['480p']) {
+        videoAssets.push({ id: `va-480-${Date.now()}`, quality: '480p', stream_url: streamUrls['480p'], storage_key: 'direct' });
+      }
+      if (streamUrls['720p']) {
+        videoAssets.push({ id: `va-720-${Date.now()}`, quality: '720p', stream_url: streamUrls['720p'], storage_key: 'direct' });
+      }
+      if (streamUrls['1080p']) {
+        videoAssets.push({ id: `va-1080-${Date.now()}`, quality: '1080p', stream_url: streamUrls['1080p'], storage_key: 'direct' });
+      }
+
       await api.adminSaveEpisode(editingEpisode.animeId, editingEpisode.seasonId, {
         id: editingEpisode.episode?.id || undefined,
         episode_number: Number(episodeFormData.episode_number) || 1,
@@ -434,14 +630,16 @@ export const AdminModal: React.FC<AdminModalProps> = ({ onClose, onRefreshCatalo
         description: episodeFormData.description.trim(),
         duration_seconds: (Number(episodeFormData.duration_minutes) || 24) * 60,
         thumbnail_url: episodeFormData.thumbnail_url.trim() || '/images/hero_cyber_samurai.jpg',
-        stream_url: episodeFormData.stream_url.trim(),
+        stream_url: mainUrl,
+        stream_urls: streamUrls,
+        video_assets: videoAssets,
         is_published: episodeFormData.is_published,
         distribution_rights_confirmed: true
       });
       const updated = await api.adminGetAnime();
       setAnimeList(updated);
       onRefreshCatalog();
-      showNotification(editingEpisode.episode ? 'Episode updated successfully!' : 'Episode added successfully!');
+      showNotification(editingEpisode.episode ? 'Episode updated successfully!' : 'Episode added with multi-quality streams!');
       setEditingEpisode(null);
     } catch (err: any) {
       showNotification(`Failed to save episode: ${err.message}`);
@@ -769,6 +967,19 @@ export const AdminModal: React.FC<AdminModalProps> = ({ onClose, onRefreshCatalo
                 <span className="flex items-center gap-1.5">
                   Database & Sync
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                </span>
+              </button>
+
+              <button
+                onClick={() => setCurrentTab('sheets')}
+                className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition-colors ${
+                  currentTab === 'sheets' ? 'bg-emerald-500/20 text-emerald-300' : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <FileSpreadsheet className="w-4 h-4 text-emerald-400" />
+                <span className="flex items-center gap-1.5">
+                  Google Sheets
+                  <span className="text-[9px] px-1.5 py-0.5 bg-emerald-950 text-emerald-300 border border-emerald-800 rounded font-mono font-bold">Drive</span>
                 </span>
               </button>
 
@@ -1617,17 +1828,78 @@ export const AdminModal: React.FC<AdminModalProps> = ({ onClose, onRefreshCatalo
                           </select>
                         </div>
 
-                        <div className="sm:col-span-2">
-                          <label className="block text-[11px] font-semibold text-slate-400 mb-1">
-                            Video Stream URL (MP4 / HLS m3u8)
-                          </label>
-                          <input
-                            type="text"
-                            placeholder="https://commondatastorage.googleapis.com/.../movie.mp4"
-                            value={editingMovie.stream_url || ''}
-                            onChange={(e) => setEditingMovie({ ...editingMovie, stream_url: e.target.value })}
-                            className="w-full h-9 px-3 bg-slate-950 border border-slate-800 rounded-lg text-xs text-white font-mono"
-                          />
+                        <div className="sm:col-span-2 p-3.5 rounded-xl bg-slate-950/90 border border-slate-800 flex flex-col gap-2.5">
+                          <div className="flex items-center justify-between border-b border-slate-800/80 pb-1.5">
+                            <label className="text-xs font-bold text-rose-400 uppercase tracking-wide flex items-center gap-1.5">
+                              <span>🎬 Movie Video Quality URLs (480p, 720p, 1080p)</span>
+                            </label>
+                            <span className="text-[10px] text-slate-400">Multi-resolution playback</span>
+                          </div>
+
+                          {/* 480p URL */}
+                          <div>
+                            <div className="flex items-center justify-between mb-0.5">
+                              <label className="text-[11px] font-semibold text-slate-300 flex items-center gap-1.5">
+                                <span className="px-1.5 py-0.2 rounded bg-emerald-950 text-emerald-400 border border-emerald-800/60 font-mono text-[10px] font-bold">480p</span>
+                                <span>Standard Definition (SD) URL</span>
+                              </label>
+                            </div>
+                            <input
+                              type="text"
+                              placeholder="https://.../movie_480p.mp4"
+                              value={(editingMovie as any).url_480p ?? (editingMovie.stream_urls?.['480p'] || '')}
+                              onChange={(e) => setEditingMovie({ ...editingMovie, url_480p: e.target.value } as any)}
+                              className="w-full h-8 px-3 bg-slate-900 border border-slate-800 rounded-lg text-xs text-white font-mono placeholder-slate-600 focus:border-rose-500"
+                            />
+                          </div>
+
+                          {/* 720p URL */}
+                          <div>
+                            <div className="flex items-center justify-between mb-0.5">
+                              <label className="text-[11px] font-semibold text-slate-300 flex items-center gap-1.5">
+                                <span className="px-1.5 py-0.2 rounded bg-blue-950 text-blue-400 border border-blue-800/60 font-mono text-[10px] font-bold">720p</span>
+                                <span>High Definition (HD) URL</span>
+                              </label>
+                            </div>
+                            <input
+                              type="text"
+                              placeholder="https://.../movie_720p.mp4"
+                              value={(editingMovie as any).url_720p ?? (editingMovie.stream_urls?.['720p'] || '')}
+                              onChange={(e) => setEditingMovie({ ...editingMovie, url_720p: e.target.value } as any)}
+                              className="w-full h-8 px-3 bg-slate-900 border border-slate-800 rounded-lg text-xs text-white font-mono placeholder-slate-600 focus:border-rose-500"
+                            />
+                          </div>
+
+                          {/* 1080p URL */}
+                          <div>
+                            <div className="flex items-center justify-between mb-0.5">
+                              <label className="text-[11px] font-semibold text-slate-300 flex items-center gap-1.5">
+                                <span className="px-1.5 py-0.2 rounded bg-purple-950 text-purple-400 border border-purple-800/60 font-mono text-[10px] font-bold">1080p</span>
+                                <span>Full High Definition (FHD) URL</span>
+                              </label>
+                            </div>
+                            <input
+                              type="text"
+                              placeholder="https://.../movie_1080p.mp4"
+                              value={(editingMovie as any).url_1080p ?? (editingMovie.stream_urls?.['1080p'] || '')}
+                              onChange={(e) => setEditingMovie({ ...editingMovie, url_1080p: e.target.value } as any)}
+                              className="w-full h-8 px-3 bg-slate-900 border border-slate-800 rounded-lg text-xs text-white font-mono placeholder-slate-600 focus:border-rose-500"
+                            />
+                          </div>
+
+                          {/* Master Fallback Stream URL */}
+                          <div className="pt-1 border-t border-slate-800/60">
+                            <label className="block text-[11px] font-semibold text-slate-400 mb-0.5">
+                              Master / Direct HLS / Embed Stream URL (Fallback)
+                            </label>
+                            <input
+                              type="text"
+                              placeholder="https://.../movie.mp4 or .m3u8"
+                              value={editingMovie.stream_url || ''}
+                              onChange={(e) => setEditingMovie({ ...editingMovie, stream_url: e.target.value })}
+                              className="w-full h-8 px-3 bg-slate-900 border border-slate-800 rounded-lg text-xs text-white font-mono placeholder-slate-600 focus:border-rose-500"
+                            />
+                          </div>
                         </div>
                       </div>
 
@@ -2292,6 +2564,232 @@ export const AdminModal: React.FC<AdminModalProps> = ({ onClose, onRefreshCatalo
               )}
 
               {/* =====================================================================
+                  TAB: GOOGLE SHEETS & DRIVE SYNC
+                  ===================================================================== */}
+              {currentTab === 'sheets' && (
+                <div className="flex flex-col gap-6 max-w-4xl">
+                  {/* Header */}
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-5 rounded-2xl bg-gradient-to-r from-emerald-950/60 via-slate-900 to-slate-950 border border-emerald-900/50">
+                    <div className="flex items-center gap-3.5">
+                      <div className="w-12 h-12 rounded-xl bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-emerald-400 shrink-0">
+                        <FileSpreadsheet className="w-6 h-6" />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h2 className="font-['Syne'] font-bold text-lg text-white">Google Sheets & Drive Sync</h2>
+                          <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-800">
+                            Authorized 1P
+                          </span>
+                        </div>
+                        <p className="text-xs text-slate-400 mt-0.5">
+                          Directly export and batch import anime series, seasons, and episodes with 480p, 720p & 1080p stream URLs via Google Sheets.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Google Account Authentication Status */}
+                  <div className="p-4 rounded-2xl bg-slate-900 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    {googleUser ? (
+                      <div className="flex items-center gap-3">
+                        {googleUser.photoURL ? (
+                          <img
+                            src={googleUser.photoURL}
+                            alt={googleUser.displayName || 'Google User'}
+                            className="w-10 h-10 rounded-full border border-emerald-500/50 object-cover"
+                          />
+                        ) : (
+                          <div className="w-10 h-10 rounded-full bg-emerald-600/30 border border-emerald-500 text-emerald-300 flex items-center justify-center font-bold">
+                            {googleUser.email?.[0]?.toUpperCase() || 'G'}
+                          </div>
+                        )}
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-bold text-white">{googleUser.displayName || 'Google Account'}</span>
+                            <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-800/80">
+                              Connected
+                            </span>
+                          </div>
+                          <span className="text-[11px] text-slate-400">{googleUser.email}</span>
+                        </div>
+                      </div>
+                    ) : (
+                      <div>
+                        <h4 className="text-xs font-bold text-white mb-0.5">Sign in with Google</h4>
+                        <p className="text-[11px] text-slate-400">
+                          Sign in to create spreadsheets in your Google Drive and import catalog data.
+                        </p>
+                      </div>
+                    )}
+
+                    <div>
+                      {googleUser ? (
+                        <button
+                          type="button"
+                          onClick={handleGoogleLogout}
+                          className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-xs font-semibold border border-slate-700 transition-colors"
+                        >
+                          Disconnect
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={handleGoogleSignIn}
+                          disabled={isGoogleLoggingIn}
+                          className="relative inline-flex items-center justify-center gap-3 px-5 py-2.5 rounded-xl bg-white hover:bg-slate-100 text-slate-800 text-xs font-semibold shadow-md border border-slate-300 transition-all active:scale-95 disabled:opacity-60 cursor-pointer"
+                        >
+                          <svg className="w-4 h-4 shrink-0" viewBox="0 0 48 48">
+                            <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
+                            <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
+                            <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
+                            <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
+                            <path fill="none" d="M0 0h48v48H0z"/>
+                          </svg>
+                          <span>{isGoogleLoggingIn ? 'Connecting...' : 'Sign in with Google'}</span>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Grid: Export and Import Action Cards */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {/* Card 1: Export Catalog */}
+                    <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 flex flex-col justify-between gap-4">
+                      <div className="flex flex-col gap-2">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-bold text-white flex items-center gap-1.5">
+                            <Upload className="w-4 h-4 text-emerald-400" />
+                            Export Catalog to Google Sheets
+                          </span>
+                        </div>
+                        <p className="text-xs text-slate-400 leading-relaxed">
+                          Creates a spreadsheet in your Google Drive with 2 tabs: <strong>Anime & Episodes</strong> and <strong>Movies</strong>, including 480p, 720p, and 1080p stream URLs.
+                        </p>
+
+                        <div className="flex items-center gap-3 mt-1 text-[11px] font-mono text-slate-400 bg-slate-950/80 p-2.5 rounded-xl border border-slate-800">
+                          <div>
+                            <span className="text-slate-500">Anime Series:</span> <strong className="text-white">{animeList.length}</strong>
+                          </div>
+                          <div>
+                            <span className="text-slate-500">Movies:</span> <strong className="text-white">{movieList.length}</strong>
+                          </div>
+                        </div>
+                      </div>
+
+                      {sheetExportResult && (
+                        <div className="p-3 bg-emerald-950/70 border border-emerald-800/80 rounded-xl flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                            <span className="text-xs text-emerald-200 font-medium">Export Complete!</span>
+                          </div>
+                          <a
+                            href={sheetExportResult.spreadsheetUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 px-3 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold transition-colors"
+                          >
+                            <span>Open Sheet</span>
+                            <ExternalLink className="w-3 h-3" />
+                          </a>
+                        </div>
+                      )}
+
+                      <button
+                        type="button"
+                        onClick={handleRequestExportToSheets}
+                        disabled={isExportingSheet || !googleUser}
+                        className="w-full h-10 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-lg shadow-emerald-900/30 flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
+                      >
+                        {isExportingSheet ? (
+                          <>
+                            <div className="w-3.5 h-3.5 rounded-full border-2 border-white border-t-transparent animate-spin" />
+                            <span>Exporting to Google Drive...</span>
+                          </>
+                        ) : (
+                          <>
+                            <FileSpreadsheet className="w-4 h-4" />
+                            <span>Export Catalog to New Sheet</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+
+                    {/* Card 2: Import / Sync from Google Sheets */}
+                    <div className="p-5 rounded-2xl bg-slate-900 border border-slate-800 flex flex-col justify-between gap-4">
+                      <div className="flex flex-col gap-2">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-bold text-white flex items-center gap-1.5">
+                            <Download className="w-4 h-4 text-cyan-400" />
+                            Import Catalog from Google Sheets
+                          </span>
+                        </div>
+                        <p className="text-xs text-slate-400 leading-relaxed">
+                          Paste a Google Spreadsheet URL or ID to sync anime series, seasons, and multi-quality stream links into the database.
+                        </p>
+
+                        <div className="mt-1">
+                          <label className="block text-[11px] font-semibold text-slate-400 mb-1">
+                            Google Spreadsheet URL or ID
+                          </label>
+                          <input
+                            type="text"
+                            placeholder="https://docs.google.com/spreadsheets/d/1BxiM.../edit"
+                            value={sheetUrlOrId}
+                            onChange={(e) => setSheetUrlOrId(e.target.value)}
+                            className="w-full h-9 px-3 bg-slate-950 border border-slate-800 rounded-lg text-xs text-white placeholder-slate-600"
+                          />
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={handleRequestImportFromSheets}
+                        disabled={isImportingSheet || !sheetUrlOrId.trim() || !googleUser}
+                        className="w-full h-10 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs shadow-lg shadow-cyan-900/30 flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
+                      >
+                        {isImportingSheet ? (
+                          <>
+                            <div className="w-3.5 h-3.5 rounded-full border-2 border-white border-t-transparent animate-spin" />
+                            <span>Reading Spreadsheet...</span>
+                          </>
+                        ) : (
+                          <>
+                            <FolderSync className="w-4 h-4" />
+                            <span>Preview & Sync Sheet</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Schema Reference Card */}
+                  <div className="p-5 rounded-2xl bg-slate-950/80 border border-slate-800/80 flex flex-col gap-3">
+                    <h4 className="text-xs font-bold text-white flex items-center gap-1.5">
+                      <span className="text-amber-400">💡</span>
+                      <span>Google Sheet Column Structure Reference</span>
+                    </h4>
+                    <p className="text-[11px] text-slate-400 leading-relaxed">
+                      When creating or importing a custom spreadsheet, format columns as follows for 100% accuracy:
+                    </p>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-[11px] font-mono">
+                      <div className="p-3 bg-slate-900/90 rounded-xl border border-slate-800">
+                        <span className="text-cyan-400 font-bold block mb-1">Sheet 1: Anime & Episodes</span>
+                        <span className="text-slate-400 block text-[10px] leading-relaxed">
+                          A: Anime ID | B: Title | C: Japanese Title | D: Description | E: Poster URL | F: Banner URL | G: Genres | H: Status | I: Season # | J: Season Title | K: Episode # | L: Episode Title | M: Duration | N: Stream URL | O: 480p URL | P: 720p URL | Q: 1080p URL | R: Published
+                        </span>
+                      </div>
+                      <div className="p-3 bg-slate-900/90 rounded-xl border border-slate-800">
+                        <span className="text-rose-400 font-bold block mb-1">Sheet 2: Movies</span>
+                        <span className="text-slate-400 block text-[10px] leading-relaxed">
+                          A: Movie ID | B: Title | C: Japanese Title | D: Description | E: Poster URL | F: Banner URL | G: Genres | H: Runtime (min) | I: Rating | J: Stream URL | K: 480p URL | L: 720p URL | M: 1080p URL | N: Published
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* =====================================================================
                   TAB: SETTINGS
                   ===================================================================== */}
               {currentTab === 'settings' && appSettings && (
@@ -2493,55 +2991,84 @@ export const AdminModal: React.FC<AdminModalProps> = ({ onClose, onRefreshCatalo
                     </div>
                   </div>
 
-                  {/* Video Stream URL */}
-                  <div>
-                    <div className="flex items-center justify-between mb-1">
-                      <label className="block text-[11px] font-semibold text-slate-400">
-                        Video Stream URL (MP4 / HLS .m3u8)
+                  {/* Multi-Quality Video Stream URLs (480p, 720p, 1080p) */}
+                  <div className="p-3.5 rounded-xl bg-slate-950/90 border border-slate-800 flex flex-col gap-3">
+                    <div className="flex items-center justify-between border-b border-slate-800/80 pb-2">
+                      <label className="text-xs font-bold text-cyan-300 flex items-center gap-1.5 uppercase tracking-wide">
+                        <span>🎬 Video Quality Stream URLs (480p, 720p, 1080p)</span>
                       </label>
-                      <span className="text-[10px] text-slate-500">Optional: leave empty for fallback</span>
+                      <span className="text-[10px] text-slate-400 font-medium">Users choose preferred resolution</span>
                     </div>
-                    <input
-                      type="text"
-                      placeholder="https://.../video.mp4 or .m3u8"
-                      value={episodeFormData.stream_url}
-                      onChange={(e) => setEpisodeFormData({ ...episodeFormData, stream_url: e.target.value })}
-                      className="w-full h-9 px-3 bg-slate-950 border border-slate-800 rounded-lg text-xs text-white font-mono"
-                    />
 
-                    {/* Quick Demo Stream Presets */}
-                    <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
-                      <span className="text-[10px] text-slate-500">Quick Demo:</span>
-                      <button
-                        type="button"
-                        onClick={() => setEpisodeFormData({ ...episodeFormData, stream_url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4' })}
-                        className="text-[10px] px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-cyan-300 font-mono"
-                      >
-                        Big Buck Bunny
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setEpisodeFormData({ ...episodeFormData, stream_url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4' })}
-                        className="text-[10px] px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-cyan-300 font-mono"
-                      >
-                        Elephants Dream
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setEpisodeFormData({ ...episodeFormData, stream_url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/TearsOfSteel.mp4' })}
-                        className="text-[10px] px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-cyan-300 font-mono"
-                      >
-                        Tears of Steel
-                      </button>
-                      {episodeFormData.stream_url && (
-                        <button
-                          type="button"
-                          onClick={() => setEpisodeFormData({ ...episodeFormData, stream_url: '' })}
-                          className="text-[10px] px-2 py-0.5 rounded bg-rose-950 text-rose-300 font-mono"
-                        >
-                          Clear
-                        </button>
-                      )}
+                    {/* 480p Video URL */}
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="text-[11px] font-semibold text-slate-300 flex items-center gap-1.5">
+                          <span className="px-1.5 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-800/60 font-mono text-[10px] font-bold">480p</span>
+                          <span>Standard Definition (SD) URL</span>
+                        </label>
+                        <span className="text-[10px] text-slate-500">Low bandwidth mobile stream</span>
+                      </div>
+                      <input
+                        type="text"
+                        placeholder="https://.../episode_480p.mp4 (Direct / Google Drive / CDN)"
+                        value={episodeFormData.url_480p}
+                        onChange={(e) => setEpisodeFormData({ ...episodeFormData, url_480p: e.target.value })}
+                        className="w-full h-8 px-3 bg-slate-900 border border-slate-800 rounded-lg text-xs text-white font-mono placeholder-slate-600 focus:border-cyan-500"
+                      />
+                    </div>
+
+                    {/* 720p Video URL */}
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="text-[11px] font-semibold text-slate-300 flex items-center gap-1.5">
+                          <span className="px-1.5 py-0.5 rounded bg-blue-950 text-blue-400 border border-blue-800/60 font-mono text-[10px] font-bold">720p</span>
+                          <span>High Definition (HD) URL</span>
+                        </label>
+                        <span className="text-[10px] text-slate-500">Fast streaming HD</span>
+                      </div>
+                      <input
+                        type="text"
+                        placeholder="https://.../episode_720p.mp4 (Direct / Google Drive / CDN)"
+                        value={episodeFormData.url_720p}
+                        onChange={(e) => setEpisodeFormData({ ...episodeFormData, url_720p: e.target.value })}
+                        className="w-full h-8 px-3 bg-slate-900 border border-slate-800 rounded-lg text-xs text-white font-mono placeholder-slate-600 focus:border-cyan-500"
+                      />
+                    </div>
+
+                    {/* 1080p Video URL */}
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="text-[11px] font-semibold text-slate-300 flex items-center gap-1.5">
+                          <span className="px-1.5 py-0.5 rounded bg-purple-950 text-purple-400 border border-purple-800/60 font-mono text-[10px] font-bold">1080p</span>
+                          <span>Full High Definition (FHD) URL</span>
+                        </label>
+                        <span className="text-[10px] text-slate-500">Theatrical 1080p resolution</span>
+                      </div>
+                      <input
+                        type="text"
+                        placeholder="https://.../episode_1080p.mp4 (Direct / Google Drive / CDN)"
+                        value={episodeFormData.url_1080p}
+                        onChange={(e) => setEpisodeFormData({ ...episodeFormData, url_1080p: e.target.value })}
+                        className="w-full h-8 px-3 bg-slate-900 border border-slate-800 rounded-lg text-xs text-white font-mono placeholder-slate-600 focus:border-cyan-500"
+                      />
+                    </div>
+
+                    {/* Master / Fallback Direct Stream URL */}
+                    <div className="pt-1 border-t border-slate-800/60">
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="text-[11px] font-semibold text-slate-400">
+                          Master / Direct HLS / Embed Stream URL (Fallback)
+                        </label>
+                        <span className="text-[10px] text-slate-500">.m3u8, direct MP4, or Drive</span>
+                      </div>
+                      <input
+                        type="text"
+                        placeholder="https://.../playlist.m3u8 or video.mp4"
+                        value={episodeFormData.stream_url}
+                        onChange={(e) => setEpisodeFormData({ ...episodeFormData, stream_url: e.target.value })}
+                        className="w-full h-8 px-3 bg-slate-900 border border-slate-800 rounded-lg text-xs text-white font-mono placeholder-slate-600 focus:border-cyan-500"
+                      />
                     </div>
                   </div>
 
@@ -2636,6 +3163,62 @@ export const AdminModal: React.FC<AdminModalProps> = ({ onClose, onRefreshCatalo
             </div>
           );
         })()}
+
+        {/* =====================================================================
+            MANDATORY GOOGLE WORKSPACE USER CONFIRMATION DIALOG (SKILL CONFORMANCE)
+            ===================================================================== */}
+        {sheetConfirmDialog?.isOpen && (
+          <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+              <div className="p-4 border-b border-slate-800 flex items-center justify-between bg-slate-950/70">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center">
+                    <FileSpreadsheet className="w-4 h-4" />
+                  </div>
+                  <h3 className="font-bold text-sm text-white">{sheetConfirmDialog.title}</h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSheetConfirmDialog(null)}
+                  className="w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:text-white"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="p-5 flex flex-col gap-3">
+                <p className="text-xs text-slate-300 leading-relaxed">
+                  {sheetConfirmDialog.description}
+                </p>
+
+                {sheetConfirmDialog.itemCountText && (
+                  <div className="p-2.5 bg-slate-950/80 rounded-xl border border-slate-800 text-[11px] font-mono text-emerald-400 font-semibold">
+                    {sheetConfirmDialog.itemCountText}
+                  </div>
+                )}
+
+                <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-800 mt-2">
+                  <button
+                    type="button"
+                    onClick={() => setSheetConfirmDialog(null)}
+                    className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={sheetConfirmDialog.onConfirm}
+                    className={`px-5 py-2 rounded-xl text-white font-bold text-xs shadow-md transition-all ${
+                      sheetConfirmDialog.confirmButtonColor || 'bg-emerald-600 hover:bg-emerald-500'
+                    }`}
+                  >
+                    {sheetConfirmDialog.confirmButtonText}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

@@ -63,6 +63,53 @@ const SERVER_OPTIONS: { id: StreamServer; name: string; tag: string }[] = [
 
 const EMOJI_OPTIONS = ['🔥', '❤️', '👏', '😱', '🍿', '💯', '😍', '🚀'];
 
+// Smart stream URL parser supporting Google Drive, YouTube, Embeds, HLS, and Direct MP4
+export function parseVideoStream(url: string): { type: 'video' | 'embed' | 'hls'; src: string } {
+  if (!url) return { type: 'video', src: '' };
+  const trimmed = url.trim();
+
+  // Google Drive URLs: convert to preview embed for 100% reliable CORS-free playback
+  const driveMatch = trimmed.match(/drive\.google\.com\/(?:file\/d\/|open\?id=)([a-zA-Z0-9_-]+)/);
+  if (driveMatch && driveMatch[1]) {
+    const fileId = driveMatch[1];
+    return {
+      type: 'embed',
+      src: `https://drive.google.com/file/d/${fileId}/preview`
+    };
+  }
+
+  // YouTube Links
+  const ytMatch = trimmed.match(/(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/);
+  if (ytMatch && ytMatch[1]) {
+    return {
+      type: 'embed',
+      src: `https://www.youtube.com/embed/${ytMatch[1]}?autoplay=1&rel=0`
+    };
+  }
+
+  // Generic iframe embed player (e.g. streamtape, doodstream, etc.)
+  if (trimmed.includes('/embed/') || trimmed.includes('player.') || trimmed.includes('streamtape.com/e/') || trimmed.includes('dood.')) {
+    return {
+      type: 'embed',
+      src: trimmed
+    };
+  }
+
+  // HLS .m3u8 manifest
+  if (trimmed.includes('.m3u8') || trimmed.includes('m3u8')) {
+    return {
+      type: 'hls',
+      src: trimmed
+    };
+  }
+
+  // Direct MP4 / MKV / WebM
+  return {
+    type: 'video',
+    src: trimmed
+  };
+}
+
 export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
   content,
   initialSeason,
@@ -140,14 +187,23 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
     setTimeout(() => setToastNotification(null), 3000);
   };
 
-  // 1. Fetch Stream URL directly
-  const loadStreamToken = useCallback(async (quality: VideoQuality = currentQuality, server: StreamServer = selectedServer) => {
+  // 1. Fetch Stream URL directly with quality and resume time support
+  const loadStreamToken = useCallback(async (quality: VideoQuality = currentQuality, server: StreamServer = selectedServer, resumeTime?: number) => {
     try {
       setIsLoadingStream(true);
       setStreamError(null);
 
-      // Check if episode has specific quality stream
-      let epStream = currentEpisode?.stream_urls?.[quality] || currentEpisode?.stream_url;
+      // Check available qualities from episode or movie
+      const sourceUrls = currentEpisode?.stream_urls || (isMovie ? (content as Movie).stream_urls : undefined);
+      if (sourceUrls && typeof sourceUrls === 'object') {
+        const activeKeys = Object.keys(sourceUrls).filter((k) => Boolean((sourceUrls as any)[k]));
+        if (activeKeys.length > 0) {
+          setAvailableQualities(activeKeys as VideoQuality[]);
+        }
+      }
+
+      // Check if episode or movie has specific quality stream
+      let epStream = sourceUrls?.[quality] || currentEpisode?.stream_url;
       if (!epStream && isMovie) {
         epStream = (content as Movie).stream_url;
       }
@@ -156,6 +212,9 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
         setStreamUrl(epStream);
         setCurrentQuality(quality);
         setIsLoadingStream(false);
+        if (resumeTime !== undefined && videoRef.current) {
+          videoRef.current.currentTime = resumeTime;
+        }
         return;
       }
 
@@ -172,12 +231,24 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
       if (res.availableQualities && res.availableQualities.length > 0) {
         setAvailableQualities(res.availableQualities);
       }
+      if (resumeTime !== undefined && videoRef.current) {
+        videoRef.current.currentTime = resumeTime;
+      }
     } catch (err: any) {
       setStreamError(err.message || 'Streaming URL unavailable. Please check upload link.');
     } finally {
       setIsLoadingStream(false);
     }
   }, [content, currentEpisode, currentQuality, isMovie, selectedServer]);
+
+  // Handle Quick Quality Switch (resumes at same playback timestamp)
+  const handleQualityChange = (q: VideoQuality) => {
+    if (q === currentQuality) return;
+    haptic.selection();
+    const prevTime = videoRef.current?.currentTime || currentTime;
+    setCurrentQuality(q);
+    loadStreamToken(q, selectedServer, prevTime);
+  };
 
   useEffect(() => {
     loadStreamToken();
@@ -191,27 +262,50 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
     }).catch(() => {});
   }, [content.id]);
 
-  // HLS.js Attachment effect
+  // Smart Stream & HLS.js Attachment effect
   useEffect(() => {
-    if (!streamUrl || !videoRef.current) return;
+    if (!streamUrl) return;
+    const parsed = parseVideoStream(streamUrl);
+    if (parsed.type === 'embed') {
+      setIsLoadingStream(false);
+      return;
+    }
+
+    if (!videoRef.current) return;
 
     let hls: Hls | null = null;
-    const isM3U8 = streamUrl.includes('.m3u8') || streamUrl.includes('m3u8');
-
-    if (isM3U8 && Hls.isSupported()) {
+    if (parsed.type === 'hls' && Hls.isSupported()) {
       hls = new Hls({
         enableWorker: true,
         lowLatencyMode: true,
       });
-      hls.loadSource(streamUrl);
+      hls.loadSource(parsed.src);
       hls.attachMedia(videoRef.current);
       hls.on(Hls.Events.MANIFEST_PARSED, () => {
+        setIsLoadingStream(false);
         if (videoRef.current && isPlaying) {
           videoRef.current.play().catch(() => {});
         }
       });
+      hls.on(Hls.Events.ERROR, (_event, data) => {
+        if (data.fatal) {
+          switch (data.type) {
+            case Hls.ErrorTypes.NETWORK_ERROR:
+              hls?.startLoad();
+              break;
+            case Hls.ErrorTypes.MEDIA_ERROR:
+              hls?.recoverMediaError();
+              break;
+            default:
+              setStreamError('HLS stream network error. Try switching quality or server.');
+              hls?.destroy();
+              break;
+          }
+        }
+      });
     } else {
-      videoRef.current.src = streamUrl;
+      videoRef.current.src = parsed.src;
+      setIsLoadingStream(false);
       if (isPlaying) {
         videoRef.current.play().catch(() => {});
       }
@@ -504,16 +598,17 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
   const fileSizeDisplay = currentEpisode?.file_size || '188.56MB';
   const codecDisplay = currentEpisode?.codec || 'x265';
   const colorDepthDisplay = currentEpisode?.color_depth || '10bit';
+  const parsedStream = parseVideoStream(streamUrl);
 
   return (
     <div
       ref={containerRef}
-      className="fixed inset-0 z-50 bg-[#0f0f13] text-slate-100 flex flex-col select-none overflow-y-auto no-scrollbar"
+      className="fixed inset-0 z-50 bg-[#0b0c13] text-slate-100 flex flex-col select-none overflow-y-auto no-scrollbar"
     >
       {/* Toast Floating Notification */}
       {toastNotification && (
-        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-cyan-950/95 border border-cyan-500/60 text-cyan-200 px-4 py-2 rounded-xl text-xs font-semibold shadow-2xl backdrop-blur-md animate-in fade-in flex items-center gap-2">
-          <Sparkles className="w-4 h-4 text-cyan-400" />
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 bg-rose-950/95 border border-rose-500/60 text-rose-200 px-4 py-2 rounded-xl text-xs font-semibold shadow-2xl backdrop-blur-md animate-in fade-in flex items-center gap-2">
+          <Sparkles className="w-4 h-4 text-rose-400" />
           <span>{toastNotification}</span>
         </div>
       )}
@@ -527,10 +622,17 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
         onClick={resetControlsTimeout}
         onTouchStart={resetControlsTimeout}
       >
-        {streamUrl ? (
+        {parsedStream.type === 'embed' ? (
+          <iframe
+            src={parsedStream.src}
+            className="w-full h-full border-0"
+            allow="autoplay; fullscreen; picture-in-picture; encrypted-media"
+            allowFullScreen
+            title={content.title}
+          />
+        ) : streamUrl ? (
           <video
             ref={videoRef}
-            src={streamUrl}
             className="w-full h-full object-contain"
             playsInline
             autoPlay
@@ -539,62 +641,94 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
             onTimeUpdate={handleTimeUpdate}
             onLoadedMetadata={handleLoadedMetadata}
             onEnded={handleVideoEnded}
-            onError={() => setStreamError('Video play error: invalid or expired stream URL.')}
+            onError={() => {
+              if (parsedStream.type !== 'embed') {
+                setStreamError('Playback interrupted: stream URL unavailable or network timed out. Try switching quality.');
+              }
+            }}
           />
         ) : (
-          <div className="w-full h-full flex items-center justify-center bg-slate-950">
-            <div className="w-10 h-10 rounded-full border-2 border-cyan-500 border-t-transparent animate-spin" />
+          <div className="w-full h-full flex flex-col items-center justify-center bg-slate-950 gap-2">
+            <div className="w-10 h-10 rounded-full border-2 border-rose-500 border-t-transparent animate-spin" />
+            <span className="text-xs text-slate-400">Loading stream...</span>
           </div>
         )}
 
-        {/* Touch zones */}
-        <div
-          className="absolute inset-0 flex pointer-events-auto"
-          onClick={handleVideoTap}
-        >
-          <div className="w-1/2 h-full flex items-center justify-center">
-            {doubleTapFeedback?.type === 'rewind' && (
-              <div className="px-4 py-2 rounded-full bg-cyan-500/30 border border-cyan-400/50 backdrop-blur-md text-white text-xs font-bold flex items-center gap-1 animate-ping">
-                <RotateCcw className="w-4 h-4" />
-                <span>-10s</span>
-              </div>
-            )}
+        {/* Touch zones (only active for native video, not iframe) */}
+        {parsedStream.type !== 'embed' && (
+          <div
+            className="absolute inset-0 flex pointer-events-auto"
+            onClick={handleVideoTap}
+          >
+            <div className="w-1/2 h-full flex items-center justify-center">
+              {doubleTapFeedback?.type === 'rewind' && (
+                <div className="px-4 py-2 rounded-full bg-rose-600/30 border border-rose-400/50 backdrop-blur-md text-white text-xs font-bold flex items-center gap-1 animate-ping">
+                  <RotateCcw className="w-4 h-4" />
+                  <span>-10s</span>
+                </div>
+              )}
+            </div>
+            <div className="w-1/2 h-full flex items-center justify-center">
+              {doubleTapFeedback?.type === 'forward' && (
+                <div className="px-4 py-2 rounded-full bg-rose-600/30 border border-rose-400/50 backdrop-blur-md text-white text-xs font-bold flex items-center gap-1 animate-ping">
+                  <RotateCw className="w-4 h-4" />
+                  <span>+10s</span>
+                </div>
+              )}
+            </div>
           </div>
-          <div className="w-1/2 h-full flex items-center justify-center">
-            {doubleTapFeedback?.type === 'forward' && (
-              <div className="px-4 py-2 rounded-full bg-cyan-500/30 border border-cyan-400/50 backdrop-blur-md text-white text-xs font-bold flex items-center gap-1 animate-ping">
-                <RotateCw className="w-4 h-4" />
-                <span>+10s</span>
-              </div>
-            )}
-          </div>
-        </div>
+        )}
 
         {/* LOADING SPINNER */}
         {isLoadingStream && (
           <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/75 backdrop-blur-sm z-10 gap-2 pointer-events-none">
-            <div className="w-10 h-10 rounded-full border-2 border-cyan-500 border-t-transparent animate-spin" />
-            <span className="text-xs text-slate-300 font-medium">Loading Video Stream...</span>
+            <div className="w-10 h-10 rounded-full border-2 border-rose-500 border-t-transparent animate-spin" />
+            <span className="text-xs text-slate-300 font-medium">Loading Video Stream ({currentQuality})...</span>
           </div>
         )}
 
-        {/* ERROR OVERLAY */}
+        {/* ERROR OVERLAY WITH ONE-TAP RESOLUTION SWITCH */}
         {streamError && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-950/95 p-6 text-center z-10 gap-3">
-            <AlertCircle className="w-10 h-10 text-cyan-400" />
-            <h3 className="font-bold text-sm text-white">Playback Error</h3>
+          <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-950/95 p-6 text-center z-30 gap-3">
+            <AlertCircle className="w-10 h-10 text-rose-500" />
+            <h3 className="font-bold text-sm text-white">Video Stream Unavailable</h3>
             <p className="text-xs text-slate-400 max-w-sm">{streamError}</p>
-            <button
-              onClick={() => loadStreamToken(currentQuality, selectedServer)}
-              className="px-4 py-2 bg-cyan-600 hover:bg-cyan-500 text-white rounded-xl text-xs font-bold"
-            >
-              Retry
-            </button>
+
+            <div className="flex flex-col gap-2 w-full max-w-xs mt-1">
+              <span className="text-[11px] text-slate-400 font-semibold">Try another resolution:</span>
+              <div className="flex items-center gap-2 justify-center">
+                {(['480p', '720p', '1080p'] as VideoQuality[]).map((q) => (
+                  <button
+                    key={q}
+                    onClick={() => {
+                      setStreamError(null);
+                      handleQualityChange(q);
+                    }}
+                    className={`px-3 py-1.5 rounded-lg border text-xs font-mono font-bold transition-all ${
+                      currentQuality === q
+                        ? 'bg-rose-600 border-rose-500 text-white'
+                        : 'bg-slate-900 border-slate-800 text-slate-200 hover:bg-slate-800'
+                    }`}
+                  >
+                    {q}
+                  </button>
+                ))}
+              </div>
+              <button
+                onClick={() => {
+                  setStreamError(null);
+                  loadStreamToken(currentQuality, selectedServer);
+                }}
+                className="mt-1 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-xl text-xs font-semibold"
+              >
+                Retry Playback
+              </button>
+            </div>
           </div>
         )}
 
         {/* TOP PLAYER CONTROLS (FADE IN/OUT) */}
-        {!isControlsLocked && (
+        {!isControlsLocked && parsedStream.type !== 'embed' && (
           <div
             className={`absolute inset-0 flex flex-col justify-between p-3 pointer-events-none transition-opacity duration-300 z-20 ${
               showControls ? 'opacity-100 bg-gradient-to-b from-black/80 via-transparent to-black/90' : 'opacity-0'
@@ -637,9 +771,9 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
 
               <button
                 onClick={togglePlay}
-                className="w-12 h-12 rounded-full bg-cyan-500 text-slate-950 flex items-center justify-center shadow-lg active:scale-95"
+                className="w-12 h-12 rounded-full bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-500 hover:to-red-500 text-white flex items-center justify-center shadow-lg shadow-rose-600/30 active:scale-95"
               >
-                {isPlaying ? <Pause className="w-6 h-6 fill-slate-950" /> : <Play className="w-6 h-6 fill-slate-950 ml-0.5" />}
+                {isPlaying ? <Pause className="w-6 h-6 fill-white" /> : <Play className="w-6 h-6 fill-white ml-0.5" />}
               </button>
 
               <button
@@ -662,13 +796,13 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
                   max={duration || 1}
                   value={currentTime}
                   onChange={handleSeekChange}
-                  className="w-full h-1 bg-slate-800 rounded appearance-none cursor-pointer accent-cyan-500"
+                  className="w-full h-1 bg-slate-800 rounded appearance-none cursor-pointer accent-rose-500"
                 />
                 <span className="text-[10px] font-mono text-slate-400">
                   {formatTime(duration)}
                 </span>
 
-                <span className="px-2 py-0.5 rounded bg-black/60 text-[10px] font-mono font-bold text-cyan-300 border border-white/10">
+                <span className="px-2 py-0.5 rounded bg-black/60 text-[10px] font-mono font-bold text-rose-300 border border-white/10">
                   {currentQuality}
                 </span>
 
@@ -689,23 +823,63 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
                 <X className="w-3.5 h-3.5" />
               </button>
             </div>
-            {['360p', '480p', '720p', '1080p'].map((q) => (
+            {['480p', '720p', '1080p'].map((q) => (
               <button
                 key={q}
                 onClick={() => {
-                  loadStreamToken(q as VideoQuality);
+                  handleQualityChange(q as VideoQuality);
                   setShowSettingsMenu(false);
                 }}
                 className={`w-full py-1.5 px-2 rounded-lg text-left flex items-center justify-between ${
-                  currentQuality === q ? 'bg-cyan-500/20 text-cyan-300 font-bold' : 'hover:bg-slate-800 text-slate-300'
+                  currentQuality === q ? 'bg-rose-950 border border-rose-800 text-rose-300 font-bold' : 'hover:bg-slate-800 text-slate-300'
                 }`}
               >
                 <span>{q}</span>
-                {currentQuality === q && <Check className="w-3.5 h-3.5 text-cyan-400" />}
+                {currentQuality === q && <Check className="w-3.5 h-3.5 text-rose-400" />}
               </button>
             ))}
           </div>
         )}
+      </div>
+
+      {/* Dedicated Quick Resolution Switcher Bar */}
+      <div className="w-full max-w-2xl mx-auto px-4 pt-3">
+        <div className="flex items-center justify-between p-2.5 bg-[#141622] rounded-2xl border border-slate-800/80 shadow-md">
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1">
+              <span>⚡ Quality:</span>
+            </span>
+            <div className="flex items-center gap-1.5">
+              {(['480p', '720p', '1080p'] as VideoQuality[]).map((q) => {
+                const isSelected = currentQuality === q;
+                const epStream = currentEpisode?.stream_urls?.[q];
+                const movieStream = (content as Movie).stream_urls?.[q];
+                const hasExplicit = Boolean(epStream || movieStream);
+
+                return (
+                  <button
+                    key={q}
+                    onClick={() => handleQualityChange(q)}
+                    className={`px-3 py-1 rounded-xl text-xs font-mono font-bold transition-all flex items-center gap-1 border ${
+                      isSelected
+                        ? 'bg-rose-600 text-white border-rose-500 shadow-md shadow-rose-600/30'
+                        : hasExplicit
+                        ? 'bg-slate-900 hover:bg-slate-800 text-slate-200 border-slate-700'
+                        : 'bg-slate-950/60 text-slate-400 border-slate-800/60 hover:text-slate-200'
+                    }`}
+                  >
+                    <span>{q}</span>
+                    {isSelected && <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <span className="text-[10px] font-mono text-rose-400/90 font-bold bg-rose-950/60 border border-rose-900/40 px-2 py-0.5 rounded-lg hidden sm:inline">
+            Active: {currentQuality}
+          </span>
+        </div>
       </div>
 
       {/* =====================================================================
@@ -742,19 +916,19 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
             {/* Audio Type */}
             <span className="px-3 py-1 rounded-full bg-[#1e202e] border border-slate-800 text-slate-300 flex items-center gap-1.5">
               <span>👤</span>
-              <span className="text-cyan-300 font-bold">{audioTypeDisplay}</span>
+              <span className="text-rose-400 font-bold">{audioTypeDisplay}</span>
             </span>
           </div>
         </div>
 
-        {/* Action Buttons Row matching screenshot: Like, Dislike, Bookmark, Report (No fake download/share links as requested) */}
+        {/* Action Buttons Row: Like, Dislike, Bookmark, Report */}
         <div className="flex items-center gap-2 py-1">
           {/* Like */}
           <button
             onClick={handleToggleLike}
             className={`px-4 py-2 rounded-xl border text-xs font-semibold flex items-center gap-1.5 transition-all ${
               hasLiked
-                ? 'bg-cyan-950 border-cyan-500 text-cyan-300'
+                ? 'bg-rose-950 border-rose-500 text-rose-300'
                 : 'bg-[#1e202e] border-slate-800 text-slate-300 hover:bg-slate-800'
             }`}
           >
@@ -780,7 +954,7 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
             onClick={handleToggleWatchlist}
             className={`px-4 py-2 rounded-xl border text-xs font-semibold flex items-center gap-1.5 transition-all ${
               isSavedInWatchlist
-                ? 'bg-cyan-500 border-cyan-400 text-slate-950 font-bold'
+                ? 'bg-rose-600 border-rose-400 text-white font-bold shadow-md shadow-rose-600/30'
                 : 'bg-[#1e202e] border-slate-800 text-slate-300 hover:bg-slate-800'
             }`}
           >
@@ -797,7 +971,7 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
         </div>
 
         {/* =====================================================================
-            3. COMMENTS SECTION (DIRECTLY UNDER ACTION BUTTONS LIKE SCREENSHOT)
+            3. COMMENTS SECTION
             ===================================================================== */}
         <div className="flex flex-col gap-3 pt-2">
           <div className="flex items-center justify-between">
@@ -808,7 +982,7 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
             <span className="text-xs text-slate-400">{comments.length} comments</span>
           </div>
 
-          {/* Comment Input Box matching screenshot */}
+          {/* Comment Input Box */}
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 rounded-full bg-rose-600 text-white font-bold text-xs flex items-center justify-center shrink-0">
               {tgUser?.first_name ? tgUser.first_name[0].toUpperCase() : 'H'}
@@ -822,12 +996,12 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
                   if (e.key === 'Enter') handlePostComment();
                 }}
                 placeholder="Add a comment..."
-                className="w-full bg-[#181a24] border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500"
+                className="w-full bg-[#181a24] border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-rose-500"
               />
               {newCommentText.trim() && (
                 <button
                   onClick={handlePostComment}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-cyan-400 hover:text-white"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-rose-400 hover:text-white"
                 >
                   <Send className="w-4 h-4" />
                 </button>
@@ -841,7 +1015,7 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
               {comments.map((c) => (
                 <div key={c.id} className="p-3 rounded-xl bg-[#181a24] border border-slate-800/80 text-xs flex flex-col gap-1">
                   <div className="flex items-center justify-between">
-                    <span className="font-bold text-cyan-300">{c.username}</span>
+                    <span className="font-bold text-rose-300">{c.username}</span>
                     <span className="text-[10px] text-slate-500">{c.created_at}</span>
                   </div>
                   <p className="text-slate-300">{c.text}</p>
@@ -852,7 +1026,7 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
         </div>
 
         {/* =====================================================================
-            4. UP NEXT · SEASON SECTION (MATCHING SCREENSHOT WITH AUTOPLAY TOGGLE)
+            4. UP NEXT · SEASON SECTION
             ===================================================================== */}
         <div className="flex flex-col gap-3 pt-3 border-t border-slate-900">
           <div className="flex items-center justify-between">
@@ -860,7 +1034,7 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
               Up Next · Season {currentSeason?.season_number || 1}
             </h2>
 
-            {/* Autoplay Toggle matching orange pill from screenshot */}
+            {/* Autoplay Toggle */}
             <button
               onClick={() => setIsAutoplayEnabled(!isAutoplayEnabled)}
               className={`px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1.5 transition-all ${
@@ -874,7 +1048,7 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
             </button>
           </div>
 
-          {/* Episode Cards matching screenshot layout */}
+          {/* Episode Cards */}
           <div className="flex flex-col gap-3">
             {allSeasonEpisodes.length === 0 ? (
               <div className="p-4 rounded-xl bg-[#181a24] text-xs text-slate-400 text-center">
@@ -895,7 +1069,7 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
                       }
                     }}
                     className={`p-3 rounded-2xl bg-[#181a24] border flex items-center gap-3.5 cursor-pointer transition-all ${
-                      isCurrent ? 'border-cyan-500 bg-cyan-950/30' : 'border-slate-800/80 hover:border-slate-700'
+                      isCurrent ? 'border-rose-500 bg-rose-950/30' : 'border-slate-800/80 hover:border-slate-700'
                     }`}
                   >
                     {/* Thumbnail */}
@@ -910,7 +1084,7 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
                       />
                       {isCurrent && (
                         <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
-                          <Play className="w-5 h-5 text-cyan-400 fill-cyan-400" />
+                          <Play className="w-5 h-5 text-rose-400 fill-rose-400" />
                         </div>
                       )}
                     </div>

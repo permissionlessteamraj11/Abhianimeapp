@@ -165,6 +165,7 @@ export interface Movie {
   runtime_minutes: number;
   rating: number;
   stream_url?: string;
+  stream_urls?: Record<string, string>;
   classification: ContentClassification;
   status: 'Completed' | 'Coming Soon';
   language: string;

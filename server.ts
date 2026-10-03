@@ -386,7 +386,7 @@ app.post(['/api/stream/playback-token', '/api/stream/token'], (req: Request, res
 
   let targetItem: any = null;
   let customStreamUrl: string | undefined = undefined;
-  let availableQualities = ['360p', '480p', '720p', '1080p', '4K'];
+  let availableQualities: string[] = ['480p', '720p', '1080p'];
 
   if (contentType === 'anime') {
     targetItem = db.getAnimeById(contentId);
@@ -394,7 +394,12 @@ app.post(['/api/stream/playback-token', '/api/stream/token'], (req: Request, res
       for (const season of targetItem.seasons) {
         const foundEp = season.episodes?.find((e: any) => e.id === episodeId);
         if (foundEp) {
-          if (foundEp.stream_url) {
+          if (foundEp.stream_urls && typeof foundEp.stream_urls === 'object') {
+            const keys = Object.keys(foundEp.stream_urls).filter((k) => Boolean(foundEp.stream_urls[k]));
+            if (keys.length > 0) availableQualities = keys;
+            customStreamUrl = foundEp.stream_urls[quality] || foundEp.stream_urls['1080p'] || foundEp.stream_urls['720p'] || foundEp.stream_urls['480p'];
+          }
+          if (!customStreamUrl && foundEp.stream_url) {
             customStreamUrl = foundEp.stream_url;
           }
           break;
@@ -403,8 +408,15 @@ app.post(['/api/stream/playback-token', '/api/stream/token'], (req: Request, res
     }
   } else {
     targetItem = db.getMovieById(contentId);
-    if (targetItem?.stream_url) {
-      customStreamUrl = targetItem.stream_url;
+    if (targetItem) {
+      if (targetItem.stream_urls && typeof targetItem.stream_urls === 'object') {
+        const keys = Object.keys(targetItem.stream_urls).filter((k: string) => Boolean(targetItem.stream_urls[k]));
+        if (keys.length > 0) availableQualities = keys;
+        customStreamUrl = targetItem.stream_urls[quality] || targetItem.stream_urls['1080p'] || targetItem.stream_urls['720p'] || targetItem.stream_urls['480p'];
+      }
+      if (!customStreamUrl && targetItem.stream_url) {
+        customStreamUrl = targetItem.stream_url;
+      }
     }
   }
 

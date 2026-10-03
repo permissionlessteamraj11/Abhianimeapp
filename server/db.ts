@@ -248,9 +248,9 @@ class DatabaseEngine {
       last_updated_at: new Date().toISOString(),
       categories: DEFAULT_CATEGORIES,
       genres: DEFAULT_GENRES,
-      anime: JSON.parse(JSON.stringify(MASTER_SEED_ANIME)),
-      movies: JSON.parse(JSON.stringify(MASTER_SEED_MOVIES)),
-      hero_banners: JSON.parse(JSON.stringify(MASTER_SEED_BANNERS)),
+      anime: [],
+      movies: [],
+      hero_banners: [],
       homepage_sections: DEFAULT_SECTIONS,
       settings: DEFAULT_SETTINGS,
       users: [

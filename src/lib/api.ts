@@ -15,9 +15,25 @@ import {
   VideoQuality
 } from '../types';
 import { getTelegramInitData, getTelegramUser } from './telegram';
+import { pushMasterCatalogToFirestore, subscribeToCatalog } from './firebase';
 
 const ADMIN_TOKEN_KEY = 'kuro_admin_session_token';
-const OFFLINE_STORAGE_KEY = 'stark_anime_offline_db_v1';
+const OFFLINE_STORAGE_KEY = 'stark_anime_offline_db_v2';
+
+const DUMMY_IDS = new Set([
+  'chrono-trigger-ex',
+  'cyberpunk-neo-tokyo',
+  'spirit-blade-chronicles',
+  'stellar-voyage',
+  'blades-of-eternity'
+]);
+
+function isFakeItem(item: any): boolean {
+  if (!item) return true;
+  if (!item.id && !item.title) return true;
+  if (DUMMY_IDS.has(item.id) || DUMMY_IDS.has(item.slug)) return true;
+  return false;
+}
 
 export function getApiBaseUrl(): string {
   const envUrl = (import.meta.env.VITE_API_URL || '').trim();
@@ -188,19 +204,25 @@ function mergeSeasons(serverSeasons: any[], localSeasons: any[]): any[] {
 
 function getOfflineDb(): OfflineDbState {
   try {
-    const raw = localStorage.getItem(OFFLINE_STORAGE_KEY);
+    const raw = localStorage.getItem(OFFLINE_STORAGE_KEY) || localStorage.getItem('stark_anime_offline_db_v1');
     if (raw) {
       const parsed = JSON.parse(raw);
-      return {
-        anime: parsed.anime || [],
-        movies: parsed.movies || [],
-        heroBanners: parsed.heroBanners || [],
+      const cleanAnime = (parsed.anime || []).filter((a: any) => !isFakeItem(a));
+      const cleanMovies = (parsed.movies || []).filter((m: any) => !isFakeItem(m));
+      const cleanBanners = (parsed.heroBanners || []).filter((b: any) => !DUMMY_IDS.has(b.linked_id));
+
+      const cleanedState: OfflineDbState = {
+        anime: cleanAnime,
+        movies: cleanMovies,
+        heroBanners: cleanBanners,
         sections: parsed.sections || DEFAULT_SECTIONS,
         categories: parsed.categories || DEFAULT_CATEGORIES,
         settings: parsed.settings || DEFAULT_SETTINGS,
         claims: parsed.claims || [],
         auditLogs: parsed.auditLogs || []
       };
+      saveOfflineDb(cleanedState);
+      return cleanedState;
     }
   } catch {
     // fallback below
@@ -629,6 +651,23 @@ export const api = {
   // ADMIN API - Ultra Robust & Resilient to Server/Offline Environments
   // =====================================================================
 
+  adminSyncFirestore(): void {
+    try {
+      const db = getOfflineDb();
+      pushMasterCatalogToFirestore({
+        anime: db.anime,
+        movies: db.movies,
+        hero_banners: db.heroBanners,
+        homepage_sections: db.sections,
+        categories: db.categories,
+        settings: db.settings
+      });
+      console.log('[Firebase Real-Time] Catalog pushed to Firestore.');
+    } catch (err) {
+      console.warn('[Firebase Real-Time] Sync error:', err);
+    }
+  },
+
   async adminLogin(password: string, username: string = 'rajpapa'): Promise<{ token: string; user: { username: string; role: string } }> {
     const cleanUser = String(username || '').trim().toLowerCase();
     const cleanPass = String(password || '').trim();
@@ -758,6 +797,7 @@ export const api = {
       if (idx >= 0) db.anime[idx] = saved;
       else db.anime.push(saved);
       saveOfflineDb(db);
+      this.adminSyncFirestore();
       return saved;
     } catch {
       const db = getOfflineDb();
@@ -789,6 +829,7 @@ export const api = {
       if (idx >= 0) db.anime[idx] = item;
       else db.anime.push(item);
       saveOfflineDb(db);
+      this.adminSyncFirestore();
       return item;
     }
   },
@@ -806,6 +847,7 @@ export const api = {
     const db = getOfflineDb();
     db.anime = db.anime.filter((a) => a.id !== id);
     saveOfflineDb(db);
+    this.adminSyncFirestore();
     return { success: true };
   },
 
@@ -836,6 +878,7 @@ export const api = {
       if (idx >= 0) db.movies[idx] = saved;
       else db.movies.push(saved);
       saveOfflineDb(db);
+      this.adminSyncFirestore();
       return saved;
     } catch {
       const db = getOfflineDb();
@@ -853,6 +896,7 @@ export const api = {
         classification: movie.classification || 'PG-13',
         status: movie.status || 'Completed',
         stream_url: movie.stream_url || '',
+        stream_urls: movie.stream_urls || {},
         language: movie.language || 'Japanese',
         available_audio: movie.available_audio || ['Japanese', 'English'],
         available_subtitles: movie.available_subtitles || ['English', 'Hindi'],
@@ -868,6 +912,7 @@ export const api = {
       if (idx >= 0) db.movies[idx] = item;
       else db.movies.push(item);
       saveOfflineDb(db);
+      this.adminSyncFirestore();
       return item;
     }
   },
@@ -885,6 +930,7 @@ export const api = {
     const db = getOfflineDb();
     db.movies = db.movies.filter((m) => m.id !== id);
     saveOfflineDb(db);
+    this.adminSyncFirestore();
     return { success: true };
   },
 
@@ -917,6 +963,7 @@ export const api = {
         });
       }
       saveOfflineDb(db);
+      this.adminSyncFirestore();
     }
     return { success: true };
   },
@@ -927,16 +974,18 @@ export const api = {
         method: 'DELETE',
         headers: getHeaders()
       });
-      return await handleResponse(res);
+      await handleResponse(res);
     } catch {
-      const db = getOfflineDb();
-      const anime = db.anime.find((a) => a.id === animeId);
-      if (anime && anime.seasons) {
-        anime.seasons = anime.seasons.filter((s) => s.id !== seasonId);
-        saveOfflineDb(db);
-      }
-      return { success: true };
+      // offline fallback
     }
+    const db = getOfflineDb();
+    const anime = db.anime.find((a) => a.id === animeId);
+    if (anime && anime.seasons) {
+      anime.seasons = anime.seasons.filter((s) => s.id !== seasonId);
+      saveOfflineDb(db);
+      this.adminSyncFirestore();
+    }
+    return { success: true };
   },
 
   async adminSaveEpisode(animeId: string, seasonId: string, episodeData: any): Promise<{ success: boolean }> {
@@ -965,6 +1014,7 @@ export const api = {
         duration_seconds: episodeData.duration_seconds || 1440,
         thumbnail_url: episodeData.thumbnail_url || anime?.backdrop_url || anime?.poster_url || '/images/hero_cyber_samurai.jpg',
         stream_url: episodeData.stream_url || '',
+        stream_urls: episodeData.stream_urls,
         video_assets: episodeData.video_assets || [],
         distribution_rights_confirmed: true,
         is_published: episodeData.is_published ?? true,
@@ -973,6 +1023,7 @@ export const api = {
       if (epIndex >= 0) season.episodes[epIndex] = epRecord;
       else season.episodes.push(epRecord);
       saveOfflineDb(db);
+      this.adminSyncFirestore();
     }
     return { success: true };
   },
@@ -983,17 +1034,19 @@ export const api = {
         method: 'DELETE',
         headers: getHeaders()
       });
-      return await handleResponse(res);
+      await handleResponse(res);
     } catch {
-      const db = getOfflineDb();
-      const anime = db.anime.find((a) => a.id === animeId);
-      const season = anime?.seasons?.find((s) => s.id === seasonId);
-      if (season && season.episodes) {
-        season.episodes = season.episodes.filter((e) => e.id !== episodeId);
-        saveOfflineDb(db);
-      }
-      return { success: true };
+      // offline fallback
     }
+    const db = getOfflineDb();
+    const anime = db.anime.find((a) => a.id === animeId);
+    const season = anime?.seasons?.find((s) => s.id === seasonId);
+    if (season && season.episodes) {
+      season.episodes = season.episodes.filter((e) => e.id !== episodeId);
+      saveOfflineDb(db);
+      this.adminSyncFirestore();
+    }
+    return { success: true };
   },
 
   async adminGetHeroBanners(): Promise<HeroBanner[]> {
@@ -1278,6 +1331,44 @@ export const api = {
     let eventSource: EventSource | null = null;
     let pollInterval: any = null;
     let lastKnownVersion: number | null = null;
+    let unsubFirestore: (() => void) | null = null;
+
+    try {
+      unsubFirestore = subscribeToCatalog((liveData) => {
+        const offlineDb = getOfflineDb();
+        let changed = false;
+        if (Array.isArray(liveData.anime)) {
+          offlineDb.anime = liveData.anime;
+          changed = true;
+        }
+        if (Array.isArray(liveData.movies)) {
+          offlineDb.movies = liveData.movies;
+          changed = true;
+        }
+        if (Array.isArray(liveData.heroBanners)) {
+          offlineDb.heroBanners = liveData.heroBanners;
+          changed = true;
+        }
+        if (Array.isArray(liveData.homepageSections)) {
+          offlineDb.sections = liveData.homepageSections;
+          changed = true;
+        }
+        if (Array.isArray(liveData.categories)) {
+          offlineDb.categories = liveData.categories;
+          changed = true;
+        }
+        if (liveData.settings) {
+          offlineDb.settings = { ...offlineDb.settings, ...liveData.settings };
+          changed = true;
+        }
+        if (changed) {
+          saveOfflineDb(offlineDb);
+          onUpdate({ type: 'FIRESTORE_LIVE_UPDATE', data: liveData });
+        }
+      });
+    } catch (err) {
+      console.warn('[Firebase Firestore] Live listener error:', err);
+    }
 
     try {
       if (typeof window !== 'undefined' && 'EventSource' in window) {
@@ -1322,6 +1413,7 @@ export const api = {
     pollInterval = setInterval(checkVersion, 8000);
 
     return () => {
+      if (unsubFirestore) unsubFirestore();
       if (eventSource) eventSource.close();
       if (pollInterval) clearInterval(pollInterval);
     };

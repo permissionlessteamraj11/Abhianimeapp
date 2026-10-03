@@ -1,0 +1,58 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Default deny catch-all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Public catalog collections (Anime, Movies, Banners, Sections, Settings)
+    // Read is public for Telegram mini-app audience, write is open for admin management
+    match /catalog/{catalogDocId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    match /anime/{animeId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    match /movies/{movieId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    match /banners/{bannerId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    match /sections/{sectionId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // User interaction: comments
+    match /comments/{commentId} {
+      allow read: if true;
+      allow create: if request.resource.data.text is string && request.resource.data.text.size() <= 1000;
+      allow update, delete: if true;
+    }
+
+    // User watch progress & saved items
+    match /watch_progress/{progressId} {
+      allow read, write: if true;
+    }
+
+    match /saved_items/{savedId} {
+      allow read, write: if true;
+    }
+
+    // Connection test document
+    match /test/{docId} {
+      allow read, write: if true;
+    }
+  }
+}

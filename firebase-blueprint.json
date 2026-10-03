@@ -1,0 +1,171 @@
+{
+  "entities": {
+    "Anime": {
+      "title": "Anime",
+      "description": "Serialized animated series",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "poster_url": { "type": "string" },
+        "backdrop_url": { "type": "string" },
+        "release_year": { "type": "number" },
+        "rating": { "type": "number" },
+        "classification": { "type": "string" },
+        "status": { "type": "string" },
+        "genres": { "type": "array" },
+        "categories": { "type": "array" },
+        "placements": { "type": "array" },
+        "section_ids": { "type": "array" },
+        "seasons": { "type": "array" },
+        "is_published": { "type": "boolean" },
+        "updated_at": { "type": "string" }
+      },
+      "required": ["id", "title"]
+    },
+    "Movie": {
+      "title": "Movie",
+      "description": "Feature-length motion picture",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "poster_url": { "type": "string" },
+        "backdrop_url": { "type": "string" },
+        "release_year": { "type": "number" },
+        "runtime_minutes": { "type": "number" },
+        "rating": { "type": "number" },
+        "stream_url": { "type": "string" },
+        "stream_urls": { "type": "object" },
+        "genres": { "type": "array" },
+        "categories": { "type": "array" },
+        "placements": { "type": "array" },
+        "section_ids": { "type": "array" },
+        "is_published": { "type": "boolean" },
+        "updated_at": { "type": "string" }
+      },
+      "required": ["id", "title"]
+    },
+    "HeroBanner": {
+      "title": "HeroBanner",
+      "description": "Featured showcase banner",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "subtitle": { "type": "string" },
+        "image_url": { "type": "string" },
+        "content_type": { "type": "string" },
+        "content_id": { "type": "string" },
+        "display_order": { "type": "number" },
+        "is_active": { "type": "boolean" }
+      },
+      "required": ["id", "title", "image_url"]
+    },
+    "HomepageSection": {
+      "title": "HomepageSection",
+      "description": "Dynamic homepage row",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "subtitle": { "type": "string" },
+        "section_type": { "type": "string" },
+        "content_source": { "type": "string" },
+        "display_order": { "type": "number" },
+        "is_enabled": { "type": "boolean" }
+      },
+      "required": ["id", "title"]
+    },
+    "Category": {
+      "title": "Category",
+      "description": "Navigation category filter",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "display_order": { "type": "number" },
+        "is_enabled": { "type": "boolean" }
+      },
+      "required": ["id", "name"]
+    },
+    "WatchProgress": {
+      "title": "WatchProgress",
+      "description": "User playback progress",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "user_id": { "type": "number" },
+        "content_id": { "type": "string" },
+        "position_seconds": { "type": "number" },
+        "duration_seconds": { "type": "number" },
+        "last_watched_at": { "type": "string" }
+      },
+      "required": ["id", "user_id", "content_id"]
+    },
+    "SavedItem": {
+      "title": "SavedItem",
+      "description": "User watchlist bookmark",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "user_id": { "type": "number" },
+        "content_type": { "type": "string" },
+        "content_id": { "type": "string" },
+        "saved_at": { "type": "string" }
+      },
+      "required": ["id", "user_id", "content_id"]
+    },
+    "Comment": {
+      "title": "Comment",
+      "description": "User discussion comment",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "content_id": { "type": "string" },
+        "user_id": { "type": "string" },
+        "username": { "type": "string" },
+        "text": { "type": "string" },
+        "created_at": { "type": "string" },
+        "likes_count": { "type": "number" }
+      },
+      "required": ["id", "content_id", "text"]
+    }
+  },
+  "firestore": {
+    "/catalog/{catalogDocId}": {
+      "schema": "Anime",
+      "description": "Master catalog data collections (anime, movies, banners, sections)"
+    },
+    "/anime/{animeId}": {
+      "schema": "Anime",
+      "description": "Anime series documents"
+    },
+    "/movies/{movieId}": {
+      "schema": "Movie",
+      "description": "Movie documents"
+    },
+    "/banners/{bannerId}": {
+      "schema": "HeroBanner",
+      "description": "Featured hero banners"
+    },
+    "/sections/{sectionId}": {
+      "schema": "HomepageSection",
+      "description": "Configurable homepage sections"
+    },
+    "/comments/{commentId}": {
+      "schema": "Comment",
+      "description": "Community episode and movie comments"
+    },
+    "/watch_progress/{progressId}": {
+      "schema": "WatchProgress",
+      "description": "User streaming resume states"
+    },
+    "/saved_items/{savedId}": {
+      "schema": "SavedItem",
+      "description": "User watchlists"
+    }
+  }
+}
