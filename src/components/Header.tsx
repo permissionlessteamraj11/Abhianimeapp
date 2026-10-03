@@ -1,30 +1,29 @@
 import React from 'react';
-import { Search, ShieldCheck, ShieldAlert } from 'lucide-react';
+import { Search, ShieldCheck, ShieldAlert, Radio } from 'lucide-react';
 import { haptic } from '../lib/telegram';
 import { StarkIcon } from './StarkLogo';
 
 interface HeaderProps {
   onOpenSearch: () => void;
+  onOpenLive?: () => void;
   maintenanceMode?: boolean;
 }
 
 export const Header: React.FC<HeaderProps> = ({
   onOpenSearch,
+  onOpenLive,
   maintenanceMode
 }) => {
   return (
     <header className="sticky top-0 z-30 h-14 w-full bg-slate-950/85 backdrop-blur-xl border-b border-slate-800/80 px-4 flex items-center justify-between">
-      {/* Brand Zone: Stark Anime Wordmark & Insignia */}
+      {/* Brand Zone: STARK Wordmark & Insignia */}
       <div className="flex items-center gap-2.5 select-none">
         <StarkIcon size={34} />
         <div className="flex flex-col">
           <div className="flex items-center gap-1.5">
             <div className="flex flex-col leading-none">
-              <span className="font-['Syne'] font-black text-sm tracking-wider text-white">
+              <span className="font-['Syne'] font-black text-base tracking-wider text-white">
                 STARK
-              </span>
-              <span className="font-sans font-extrabold italic text-xs tracking-widest text-slate-300">
-                ANIME
               </span>
             </div>
             <span className="inline-flex items-center gap-0.5 text-[9px] uppercase tracking-wider font-semibold text-cyan-400 bg-cyan-950/80 border border-cyan-500/40 px-1.5 py-0.5 rounded ml-1">
@@ -37,6 +36,19 @@ export const Header: React.FC<HeaderProps> = ({
 
       {/* Action Zone */}
       <div className="flex items-center gap-2">
+        {onOpenLive && (
+          <button
+            onClick={() => {
+              haptic.selection();
+              onOpenLive();
+            }}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-rose-600/90 hover:bg-rose-500 text-white text-[11px] font-bold shadow-md shadow-rose-600/20 active:scale-95 transition-all"
+          >
+            <Radio className="w-3.5 h-3.5 animate-pulse text-white" />
+            <span>LIVE</span>
+          </button>
+        )}
+
         {maintenanceMode && (
           <span className="flex items-center gap-1 text-[10px] text-amber-400 bg-amber-950/70 border border-amber-500/30 px-2 py-1 rounded-md">
             <ShieldAlert className="w-3 h-3" />
