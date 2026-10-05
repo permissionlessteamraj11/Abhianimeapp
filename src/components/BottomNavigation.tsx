@@ -33,9 +33,7 @@ export const BottomNavigation: React.FC<BottomNavigationProps> = ({
         >
           <div className="relative">
             <Home className={`w-5 h-5 transition-transform group-hover:scale-110 ${currentTab === 'home' ? 'stroke-[2.5px]' : 'stroke-2'}`} />
-            {currentTab === 'home' && (
-              <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-1.5 h-1.5 rounded-full bg-cyan-400 shadow-md shadow-cyan-400" />
-            )}
+
           </div>
           <span className="text-[10px] font-bold tracking-tight mt-1">Home</span>
         </button>
@@ -64,9 +62,7 @@ export const BottomNavigation: React.FC<BottomNavigationProps> = ({
                 {savedBadgeCount}
               </span>
             )}
-            {currentTab === 'saved' && (
-              <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-1.5 h-1.5 rounded-full bg-cyan-400 shadow-md shadow-cyan-400" />
-            )}
+
           </div>
           <span className="text-[10px] font-bold tracking-tight mt-1">Saved</span>
         </button>
@@ -86,9 +82,7 @@ export const BottomNavigation: React.FC<BottomNavigationProps> = ({
         >
           <div className="relative">
             <User className={`w-5 h-5 transition-transform group-hover:scale-110 ${currentTab === 'profile' ? 'stroke-[2.5px]' : 'stroke-2'}`} />
-            {currentTab === 'profile' && (
-              <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-1.5 h-1.5 rounded-full bg-cyan-400 shadow-md shadow-cyan-400" />
-            )}
+
           </div>
           <span className="text-[10px] font-bold tracking-tight mt-1">Profile</span>
         </button>
