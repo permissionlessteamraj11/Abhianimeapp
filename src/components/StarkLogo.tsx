@@ -43,16 +43,17 @@ export const StarkLogoBadge: React.FC<StarkLogoBadgeProps> = ({
   return (
     <div
       style={{ width: pixelSize, height: pixelSize }}
-      className={`relative overflow-hidden shrink-0 border border-slate-700/80 shadow-lg shadow-black/60 bg-black flex items-center justify-center ${roundClass} ${className}`}
+      className={`relative overflow-hidden shrink-0 border border-cyan-500/30 shadow-md shadow-cyan-950/40 bg-slate-950 flex items-center justify-center p-0.5 ${roundClass} ${className}`}
     >
-      {!hasError ? (
-        <img
-          src={currentSrc}
-          alt="STARK"
-          onError={handleError}
-          className="w-full h-full object-cover object-center select-none pointer-events-none"
-        />
-      ) : (
+      <div className={`w-full h-full overflow-hidden ${roundClass} flex items-center justify-center bg-black`}>
+        {!hasError ? (
+          <img
+            src={currentSrc}
+            alt="STARK"
+            onError={handleError}
+            className="w-full h-full object-cover object-center select-none pointer-events-none scale-[1.02]"
+          />
+        ) : (
         <div className="w-full h-full bg-gradient-to-br from-slate-900 via-cyan-950 to-slate-950 flex flex-col items-center justify-center p-1 relative">
           <div className="absolute inset-0 bg-cyan-600/10 backdrop-blur-[1px]" />
           <svg viewBox="0 0 40 40" className="w-3/4 h-3/4 text-cyan-400 fill-current drop-shadow-[0_0_8px_rgba(6,182,212,0.6)]">
@@ -61,7 +62,8 @@ export const StarkLogoBadge: React.FC<StarkLogoBadgeProps> = ({
             <path d="M15 26L20 32L25 26L20 28L15 26Z" fill="#3b82f6" />
           </svg>
         </div>
-      )}
+        )}
+      </div>
     </div>
   );
 };

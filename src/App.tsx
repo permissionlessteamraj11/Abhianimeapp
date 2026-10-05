@@ -39,6 +39,58 @@ import {
 } from './components/LegalModals';
 import { ToastContainer, ToastMessage } from './components/Toast';
 import { StarkLogoBadge } from './components/StarkLogo';
+import { Wrench, ShieldAlert, Lock } from 'lucide-react';
+
+const MaintenanceOverlay: React.FC<{
+  notice?: string;
+  onOpenAdmin: () => void;
+}> = ({ notice, onOpenAdmin }) => {
+  return (
+    <div className="fixed inset-0 z-50 bg-slate-950 flex flex-col items-center justify-center p-6 text-center select-none overflow-hidden animate-in fade-in duration-300">
+      <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-72 h-72 bg-amber-500/10 rounded-full blur-3xl pointer-events-none" />
+      <div className="absolute bottom-1/4 left-1/2 -translate-x-1/2 w-64 h-64 bg-cyan-500/10 rounded-full blur-3xl pointer-events-none" />
+
+      <div className="relative mb-6">
+        <StarkLogoBadge size={80} rounded="2xl" className="shadow-2xl shadow-amber-500/20 border-2 border-amber-500/40" />
+        <div className="absolute -bottom-2 -right-2 w-8 h-8 rounded-full bg-amber-500 text-slate-950 flex items-center justify-center shadow-lg border-2 border-slate-950">
+          <Wrench className="w-4 h-4 animate-spin" style={{ animationDuration: "6s" }} />
+        </div>
+      </div>
+
+      <div className="flex items-center justify-center gap-2 mb-2">
+        <span className="font-['Syne'] font-black text-2xl tracking-widest text-white">
+          STARK
+        </span>
+        <span className="font-sans font-extrabold italic text-sm tracking-[0.2em] text-cyan-400">
+          ANIME
+        </span>
+      </div>
+
+      <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-950/80 border border-amber-500/40 text-amber-300 text-xs font-bold uppercase tracking-wider mb-4">
+        <ShieldAlert className="w-3.5 h-3.5 text-amber-400" />
+        <span>Under Maintenance</span>
+      </div>
+
+      <div className="max-w-xs bg-slate-900/80 border border-slate-800 rounded-2xl p-4 shadow-xl mb-6">
+        <p className="text-xs text-slate-300 leading-relaxed">
+          {notice || "Our platform is currently undergoing scheduled maintenance to improve system performance and streaming quality. Please check back soon!"}
+        </p>
+      </div>
+
+      <p className="text-[11px] text-slate-500 font-mono mb-8">
+        Check back shortly · System updates in progress
+      </p>
+
+      <button
+        onClick={onOpenAdmin}
+        className="px-4 py-2 rounded-xl bg-slate-900/60 hover:bg-slate-800 text-slate-400 hover:text-slate-200 text-xs font-semibold border border-slate-800/80 transition-colors flex items-center gap-1.5"
+      >
+        <Lock className="w-3.5 h-3.5 text-slate-500" />
+        <span>Admin Portal</span>
+      </button>
+    </div>
+  );
+};
 
 export default function App() {
   // Navigation
@@ -362,6 +414,14 @@ export default function App() {
     <div className="min-h-screen bg-slate-950 text-slate-100 flex justify-center selection:bg-cyan-500/30 selection:text-cyan-200">
       {/* Toast Overlay */}
       <ToastContainer toasts={toasts} onDismiss={dismissToast} />
+
+      {/* Full Screen Under Maintenance Overlay for Users */}
+      {appSettings?.maintenanceMode && !showAdminModal && (
+        <MaintenanceOverlay
+          notice={appSettings.maintenanceNotice}
+          onOpenAdmin={() => setShowAdminModal(true)}
+        />
+      )}
 
       {/* Mobile-First Frame Container */}
       <div className="w-full max-w-md min-h-screen bg-slate-950 flex flex-col relative shadow-2xl border-x border-slate-900/60 pb-16">

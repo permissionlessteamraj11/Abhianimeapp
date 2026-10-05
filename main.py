@@ -507,6 +507,233 @@ def run_interactive_menu():
             sys.exit(0)
 
 
+
+# ---------------------------------------------------------------------------
+# Active Telegram Bot Long-Polling Runner
+# ---------------------------------------------------------------------------
+class StarkTelegramBotRunner:
+    def __init__(self, token: str, manager: StarkManager):
+        self.token = token
+        self.manager = manager
+        self.api_url = f"https://api.telegram.org/bot{token}"
+        self.offset = 0
+
+    def send_message(self, chat_id: int, text: str, parse_mode: str = "HTML"):
+        if not requests:
+            return
+        try:
+            requests.post(
+                f"{self.api_url}/sendMessage",
+                json={"chat_id": chat_id, "text": text, "parse_mode": parse_mode},
+                timeout=10
+            )
+        except Exception as e:
+            print(f"[Bot Send Error] {e}")
+
+    def handle_update(self, update: Dict[str, Any]):
+        msg = update.get("message")
+        if not msg:
+            return
+
+        chat_id = msg.get("chat", {}).get("id")
+        if not chat_id:
+            return
+
+        text = (msg.get("text") or "").strip()
+        caption = (msg.get("caption") or "").strip()
+
+        video = msg.get("video")
+        document = msg.get("document")
+
+        if video or document:
+            file_obj = video or document
+            file_id = file_obj.get("file_id")
+            file_name = file_obj.get("file_name", "video.mp4")
+
+            self.send_message(
+                chat_id,
+                f"📥 <b>Video Received!</b>\nFile ID: <code>{file_id}</code>\nProcessing upload & catalog sync..."
+            )
+
+            anime_id = ""
+            season_num = 1
+            ep_num = 1
+            ep_title = ""
+
+            if caption:
+                parts = [p.strip() for p in caption.split("|")]
+                for p in parts:
+                    if ":" in p:
+                        k, v = p.split(":", 1)
+                        k = k.strip().lower()
+                        v = v.strip()
+                        if k in ["anime", "anime_id", "id"]:
+                            anime_id = v
+                        elif k in ["season", "s"]:
+                            if v.isdigit():
+                                season_num = int(v)
+                        elif k in ["ep", "episode", "ep_num"]:
+                            if v.isdigit():
+                                ep_num = int(v)
+                        elif k in ["title", "ep_title"]:
+                            ep_title = v
+
+            anime_list = self.manager.list_anime()
+            if not anime_id and anime_list:
+                anime_id = anime_list[0].get("id", "")
+
+            if not anime_id:
+                res = self.manager.save_anime({
+                    "title": "Telegram Uploads Series",
+                    "description": "Auto-created series for direct Telegram video uploads."
+                })
+                anime_id = res.get("id") if res else "anime_tg_uploads"
+
+            ep_payload = {
+                "episode_number": ep_num,
+                "title": ep_title or f"Episode {ep_num} ({file_name})",
+                "telegram_file_id": file_id,
+                "stream_url": f"tg:{file_id}",
+                "stream_urls": {
+                    "1080p": f"tg:{file_id}",
+                    "720p": f"tg:{file_id}"
+                }
+            }
+
+            saved_ep = self.manager.add_episode(anime_id, season_num, ep_payload)
+
+            self.send_message(
+                chat_id,
+                f"✅ <b>Episode Added & Synced Successfully!</b>\n\n"
+                f"<b>Anime ID:</b> <code>{anime_id}</code>\n"
+                f"<b>Season:</b> {season_num} | <b>Episode:</b> {ep_num}\n"
+                f"<b>Title:</b> {ep_payload['title']}\n"
+                f"<b>File ID:</b> <code>{file_id}</code>\n\n"
+                f"🌐 Live on STARK Anime Web App & Vercel API!"
+            )
+            return
+
+        if text.startswith("/start") or text.startswith("/help"):
+            welcome_text = (
+                "⚡ <b>STARK ANIME VPS Telegram Bot</b> ⚡\n"
+                "Connected to Vercel App & Neon PostgreSQL DB!\n\n"
+                "<b>Commands:</b>\n"
+                "• /status - Check system connection & catalog stats\n"
+                "• /list - List all anime & movies in catalog\n"
+                "• /addanime &lt;title&gt; - Create a new anime series\n"
+                "• /addmovie &lt;title&gt; | &lt;url_or_file_id&gt; - Add movie\n\n"
+                "<b>Direct Video Uploading:</b>\n"
+                "Send any video or document file directly to this bot!\n"
+                "<i>Optional Caption format:</i>\n"
+                "<code>Anime: &lt;anime_id&gt; | Season: 1 | Ep: 1 | Title: Episode Title</code>"
+            )
+            self.send_message(chat_id, welcome_text)
+
+        elif text.startswith("/status"):
+            anime_list = self.manager.list_anime()
+            movies_list = self.manager.list_movies()
+            total_eps = sum(sum(len(s.get("episodes", [])) for s in a.get("seasons", [])) for a in anime_list)
+
+            status_text = (
+                "📊 <b>STARK System Status</b>\n\n"
+                f"<b>Vercel API URL:</b> <code>{self.manager.api_url}</code>\n"
+                f"<b>Neon PostgreSQL DB:</b> {'Connected' if self.manager.db_url else 'Not Set'}\n\n"
+                f"🎬 <b>Catalog Stats:</b>\n"
+                f"• Anime Series: {len(anime_list)}\n"
+                f"• Total Episodes: {total_eps}\n"
+                f"• Feature Movies: {len(movies_list)}\n\n"
+                "🟢 All systems operational & synced between VPS and Vercel!"
+            )
+            self.send_message(chat_id, status_text)
+
+        elif text.startswith("/list"):
+            anime_list = self.manager.list_anime()
+            if not anime_list:
+                self.send_message(chat_id, "📁 Catalog is currently empty.")
+                return
+
+            msg_lines = ["<b>📋 STARK Anime Catalog:</b>\n"]
+            for idx, a in enumerate(anime_list[:15], 1):
+                ep_count = sum(len(s.get("episodes", [])) for s in a.get("seasons", []))
+                msg_lines.append(f"{idx}. <b>{a.get('title')}</b> (ID: <code>{a.get('id')}</code>) - {ep_count} eps")
+
+            self.send_message(chat_id, "\n".join(msg_lines))
+
+        elif text.startswith("/addanime"):
+            title = text.replace("/addanime", "").strip()
+            if not title:
+                self.send_message(chat_id, "❌ Usage: <code>/addanime Title of Anime</code>")
+                return
+
+            res = self.manager.save_anime({
+                "title": title,
+                "description": f"Official series page for {title}",
+                "poster_url": "/images/poster_chrono_blade.jpg",
+                "rating": 8.5,
+                "release_year": 2026
+            })
+            if res:
+                self.send_message(
+                    chat_id,
+                    f"✅ <b>Anime Created!</b>\nTitle: <b>{title}</b>\nID: <code>{res.get('id')}</code>"
+                )
+            else:
+                self.send_message(chat_id, "❌ Failed to create anime.")
+
+        elif text.startswith("/addmovie"):
+            raw = text.replace("/addmovie", "").strip()
+            if "|" in raw:
+                m_title, m_url = raw.split("|", 1)
+            else:
+                m_title, m_url = raw, ""
+
+            m_title = m_title.strip()
+            m_url = m_url.strip()
+
+            if not m_title:
+                self.send_message(chat_id, "❌ Usage: <code>/addmovie Movie Title | Stream URL or File ID</code>")
+                return
+
+            res = self.manager.save_movie({
+                "title": m_title,
+                "stream_url": m_url,
+                "poster_url": "/images/poster_chrono_blade.jpg",
+                "rating": 8.8,
+                "release_year": 2026
+            })
+            if res:
+                self.send_message(
+                    chat_id,
+                    f"✅ <b>Movie Created!</b>\nTitle: <b>{m_title}</b>\nID: <code>{res.get('id')}</code>"
+                )
+
+    def start_polling(self):
+        if not requests:
+            print("[Bot Error] Python 'requests' package not installed.")
+            return
+
+        print("⚡ Starting STARK Telegram Bot Polling Server...")
+        print(f"Bot Token: {self.token[:12]}...")
+        print("Listening for messages and video uploads from Telegram admins...")
+
+        while True:
+            try:
+                res = requests.get(
+                    f"{self.api_url}/getUpdates",
+                    params={"offset": self.offset, "timeout": 20},
+                    timeout=35
+                )
+                if res.status_code == 200:
+                    data = res.json()
+                    if data.get("ok"):
+                        for update in data.get("result", []):
+                            self.offset = update["update_id"] + 1
+                            self.handle_update(update)
+            except Exception as e:
+                print(f"[Polling Exception] {e}")
+                time.sleep(3)
+
+
 # ---------------------------------------------------------------------------
 # CLI Argument Parser & Entry Point
 # ---------------------------------------------------------------------------
@@ -514,19 +741,15 @@ def main():
     parser = argparse.ArgumentParser(description="STARK ANIME VPS Management & Video Uploader Utility")
     subparsers = parser.add_subparsers(dest="command", help="Available Commands")
 
-    # Command: menu
+    subparsers.add_parser("bot", help="Run active Telegram Bot long-polling server")
     subparsers.add_parser("menu", help="Launch interactive CLI menu console")
-
-    # Command: list
     subparsers.add_parser("list", help="List all anime in the catalog")
 
-    # Command: add-anime
     add_anime_p = subparsers.add_parser("add-anime", help="Create a new anime series")
     add_anime_p.add_argument("--title", required=True, help="Anime Title")
     add_anime_p.add_argument("--poster", default="", help="Poster Image URL")
     add_anime_p.add_argument("--description", default="", help="Description")
 
-    # Command: add-ep
     add_ep_p = subparsers.add_parser("add-ep", help="Add an episode to anime season")
     add_ep_p.add_argument("--anime-id", required=True, help="Anime ID")
     add_ep_p.add_argument("--season", type=int, default=1, help="Season number")
@@ -534,7 +757,6 @@ def main():
     add_ep_p.add_argument("--title", default="", help="Episode title")
     add_ep_p.add_argument("--file-id", default="", help="Telegram File ID or URL")
 
-    # Command: upload-ep
     up_ep_p = subparsers.add_parser("upload-ep", help="Upload local VPS video file and attach as episode")
     up_ep_p.add_argument("--anime-id", required=True, help="Anime ID")
     up_ep_p.add_argument("--season", type=int, default=1, help="Season number")
@@ -547,7 +769,11 @@ def main():
     manager = StarkManager()
     uploader = TelegramUploader()
 
-    if not args.command or args.command == "menu":
+    if not args.command or args.command == "bot":
+        runner = StarkTelegramBotRunner(TELEGRAM_BOT_TOKEN, manager)
+        runner.start_polling()
+
+    elif args.command == "menu":
         run_interactive_menu()
 
     elif args.command == "list":

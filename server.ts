@@ -341,14 +341,24 @@ app.get('/api/search', (req: Request, res: Response) => {
 
   const allAnime = db.getAllAnime();
   const allMovies = db.getAllMovies();
+  const allCategories = db.getAllCategories();
 
-  let pool: any[] = [];
-  if (cat === 'anime') {
-    pool = allAnime;
-  } else if (cat === 'movies') {
-    pool = allMovies;
-  } else {
-    pool = [...allAnime, ...allMovies];
+  let pool: any[] = [...allAnime, ...allMovies];
+
+  if (cat !== 'all') {
+    if (cat === 'anime') {
+      pool = allAnime;
+    } else if (cat === 'movies') {
+      pool = allMovies;
+    } else {
+      pool = pool.filter((item) => {
+        const hasCatId = Array.isArray(item.categories) && item.categories.includes(cat);
+        const matchingCatObj = allCategories.find((c) => c.id === cat || c.name.toLowerCase() === cat);
+        const catNameMatch = matchingCatObj && Array.isArray(item.categories) && item.categories.includes(matchingCatObj.id);
+        const genreMatch = Array.isArray(item.genres) && item.genres.some((g: string) => g.toLowerCase() === cat);
+        return hasCatId || catNameMatch || genreMatch;
+      });
+    }
   }
 
   pool = pool.filter((item) => item.is_published !== false);
@@ -356,6 +366,13 @@ app.get('/api/search', (req: Request, res: Response) => {
   if (!q) {
     return res.json({ exactMatches: [], results: pool.slice(0, 15), total: pool.length });
   }
+
+  const matchingCategoryIds = new Set<string>();
+  allCategories.forEach((c) => {
+    if ((c.name || '').toLowerCase().includes(q) || (c.id || '').toLowerCase().includes(q)) {
+      matchingCategoryIds.add(c.id);
+    }
+  });
 
   const exactMatches: any[] = [];
   const results: any[] = [];
@@ -365,10 +382,26 @@ app.get('/api/search', (req: Request, res: Response) => {
     const altTitle = (item.alt_title || '').toLowerCase();
     const desc = (item.description || '').toLowerCase();
     const genres = (item.genres || []).map((g: string) => g.toLowerCase());
+    const itemCats = (item.categories || []).map((c: string) => c.toLowerCase());
+    const audioType = (item.audio_type || '').toLowerCase();
+    const lang = (item.language || '').toLowerCase();
+
+    const matchesCategoryName = (item.categories || []).some((catId: string) => matchingCategoryIds.has(catId));
+    const matchesCategoryDirect = itemCats.some((c: string) => c.includes(q));
 
     if (title === q || altTitle === q) {
       exactMatches.push(item);
-    } else if (title.startsWith(q) || title.includes(q) || altTitle.includes(q) || genres.some((g: string) => g.includes(q)) || desc.includes(q)) {
+    } else if (
+      title.startsWith(q) ||
+      title.includes(q) ||
+      altTitle.includes(q) ||
+      genres.some((g: string) => g.includes(q)) ||
+      desc.includes(q) ||
+      matchesCategoryName ||
+      matchesCategoryDirect ||
+      audioType.includes(q) ||
+      lang.includes(q)
+    ) {
       results.push(item);
     }
   });
