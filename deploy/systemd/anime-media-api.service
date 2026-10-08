@@ -1,0 +1,15 @@
+[Unit]
+Description=STARK Anime Local VPS API & Gateway
+After=network.target postgresql.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/stark-vps-manager
+EnvironmentFile=/opt/stark-vps-manager/.env
+ExecStart=/usr/local/bin/bun run /opt/stark-vps-manager/server.ts
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
