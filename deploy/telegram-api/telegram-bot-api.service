@@ -1,0 +1,13 @@
+[Unit]
+Description=Local Telegram Bot API Server for Large File Downloads (Up to 2GB)
+After=network.target
+
+[Service]
+Type=simple
+User=root
+ExecStart=/usr/local/bin/telegram-bot-api --api-id=37729457 --api-hash=bb68973b7efcbbd074cda984c95502d6 --local --dir=/srv/telegram-bot-api
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

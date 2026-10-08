@@ -1,0 +1,19 @@
+[Unit]
+Description=STARK Anime FFmpeg Transcoding & Media Job Worker
+After=network.target postgresql.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/stark-vps-manager
+EnvironmentFile=/opt/stark-vps-manager/.env
+ExecStart=/opt/stark-vps-manager/venv/bin/python3 main.py worker
+Restart=always
+RestartSec=5
+KillMode=process
+
+# Limits
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target
