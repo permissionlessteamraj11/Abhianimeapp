@@ -534,34 +534,56 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
     return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   };
 
+
+  // Target parameter resolution for Reactions & Comments
+  const targetType = isMovie ? "movie" : (currentEpisode ? "episode" : "anime");
+  const targetId = isMovie ? content.id : (currentEpisode ? currentEpisode.id : content.id);
+
+  // Load Reactions & Comments persistently
+  const loadReactionsAndComments = useCallback(async () => {
+    try {
+      const [reactData, commentData] = await Promise.all([
+        api.getReactions(targetType, targetId),
+        api.getComments(targetType, targetId)
+      ]);
+      setLikesCount(reactData.likesCount);
+      setDislikesCount(reactData.dislikesCount);
+      setHasLiked(reactData.userReaction === "like");
+      setHasDisliked(reactData.userReaction === "dislike");
+      setComments(commentData);
+    } catch (err) {
+      console.warn("Failed to load reactions or comments:", err);
+    }
+  }, [targetType, targetId]);
+
+  useEffect(() => {
+    loadReactionsAndComments();
+  }, [loadReactionsAndComments]);
+
   // Action Button Handlers
-  const handleToggleLike = () => {
+  const handleToggleLike = async () => {
     haptic.selection();
-    if (hasLiked) {
-      setHasLiked(false);
-      setLikesCount((prev) => prev - 1);
-    } else {
-      setHasLiked(true);
-      setLikesCount((prev) => prev + 1);
-      if (hasDisliked) {
-        setHasDisliked(false);
-        setDislikesCount((prev) => Math.max(0, prev - 1));
-      }
+    try {
+      const res = await api.toggleReaction(targetType, targetId, "like");
+      setLikesCount(res.likesCount);
+      setDislikesCount(res.dislikesCount);
+      setHasLiked(res.userReaction === "like");
+      setHasDisliked(res.userReaction === "dislike");
+    } catch (err: any) {
+      triggerToast(err.message || "Failed to like");
     }
   };
 
-  const handleToggleDislike = () => {
+  const handleToggleDislike = async () => {
     haptic.selection();
-    if (hasDisliked) {
-      setHasDisliked(false);
-      setDislikesCount((prev) => Math.max(0, prev - 1));
-    } else {
-      setHasDisliked(true);
-      setDislikesCount((prev) => prev + 1);
-      if (hasLiked) {
-        setHasLiked(false);
-        setLikesCount((prev) => Math.max(0, prev - 1));
-      }
+    try {
+      const res = await api.toggleReaction(targetType, targetId, "dislike");
+      setLikesCount(res.likesCount);
+      setDislikesCount(res.dislikesCount);
+      setHasLiked(res.userReaction === "like");
+      setHasDisliked(res.userReaction === "dislike");
+    } catch (err: any) {
+      triggerToast(err.message || "Failed to dislike");
     }
   };
 
@@ -584,32 +606,31 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
   };
 
   // Comment Handlers
-  const handlePostComment = () => {
+  const handlePostComment = async () => {
     if (!newCommentText.trim()) return;
-    haptic.impact('medium');
+    haptic.impact("medium");
 
-    const authorName = tgUser?.first_name ? `${tgUser.first_name} ${tgUser.last_name || ''}`.trim() : 'Viewer';
-    const authorAvatar = tgUser?.photo_url || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=120&q=80';
+    try {
+      const posted = await api.postComment(targetType, targetId, newCommentText.trim());
+      setComments((prev) => [posted, ...prev]);
+      setNewCommentText("");
+      setShowEmojiPicker(false);
+      triggerToast("Comment posted");
+    } catch (err: any) {
+      triggerToast(err.message || "Failed to post comment");
+    }
+  };
 
-    const newComment: Comment = {
-      id: `c-${Date.now()}`,
-      content_id: content.id,
-      episode_id: currentEpisode?.id,
-      user_id: String(tgUser?.id || Date.now()),
-      username: authorName,
-      user_avatar: authorAvatar,
-      badge: 'Viewer',
-      text: newCommentText.trim(),
-      created_at: 'Just now',
-      likes_count: 0,
-      is_liked: false,
-      replies_count: 0,
-      replies: []
-    };
-    setComments((prev) => [newComment, ...prev]);
-    setNewCommentText('');
-    setShowEmojiPicker(false);
-    triggerToast('Comment posted');
+  const handleLikeComment = async (commentId: string) => {
+    haptic.selection();
+    try {
+      const res = await api.toggleLikeComment(commentId);
+      setComments((prev) =>
+        prev.map((c) => (c.id === commentId ? { ...c, likes_count: res.likes_count, is_liked: res.is_liked } : c))
+      );
+    } catch (err: any) {
+      triggerToast(err.message || "Could not like comment");
+    }
   };
 
   const allSeasonEpisodes = currentSeason?.episodes || [];

@@ -41,6 +41,8 @@ export interface DatabaseSchema {
   audit_logs: any[];
   copyright_claims: any[];
   reports: any[];
+  comments?: any[];
+  content_reactions?: any[];
 }
 
 const DEFAULT_CATEGORIES = [
@@ -219,7 +221,9 @@ class DatabaseEngine {
       watch_progress: Array.isArray(parsed.watch_progress) ? parsed.watch_progress : [],
       audit_logs: Array.isArray(parsed.audit_logs) ? parsed.audit_logs : [],
       copyright_claims: Array.isArray(parsed.copyright_claims) ? parsed.copyright_claims : [],
-      reports: Array.isArray(parsed.reports) ? parsed.reports : []
+      reports: Array.isArray(parsed.reports) ? parsed.reports : [],
+      comments: Array.isArray(parsed.comments) ? parsed.comments : [],
+      content_reactions: Array.isArray(parsed.content_reactions) ? parsed.content_reactions : []
     };
   }
 
@@ -258,7 +262,9 @@ class DatabaseEngine {
       watch_progress: [],
       audit_logs: [],
       copyright_claims: [],
-      reports: []
+      reports: [],
+      comments: [],
+      content_reactions: []
     };
 
     this.persistSync(fresh);
@@ -1010,6 +1016,211 @@ class DatabaseEngine {
       throw err;
     }
   }
+
+  // --- CONTENT REACTIONS (LIKES & DISLIKES) ---
+  public getReactions(targetType: string, targetId: string, currentUserId?: number): { likesCount: number; dislikesCount: number; userReaction: 'like' | 'dislike' | null } {
+    if (!this.db.content_reactions) this.db.content_reactions = [];
+    const list = this.db.content_reactions.filter((r) => r.target_type === targetType && r.target_id === targetId);
+    const likesCount = list.filter((r) => r.reaction_type === 'like').length;
+    const dislikesCount = list.filter((r) => r.reaction_type === 'dislike').length;
+    let userReaction: 'like' | 'dislike' | null = null;
+    if (currentUserId) {
+      const match = list.find((r) => Number(r.user_id) === Number(currentUserId));
+      if (match) userReaction = match.reaction_type;
+    }
+    return { likesCount, dislikesCount, userReaction };
+  }
+
+  public toggleReaction(targetType: string, targetId: string, userId: number, reactionType: 'like' | 'dislike'): { likesCount: number; dislikesCount: number; userReaction: 'like' | 'dislike' | null } {
+    const user = this.getUser(userId);
+    if (user?.is_suspended) {
+      throw new Error('Your account is currently suspended from reacting.');
+    }
+
+    if (!this.db.content_reactions) this.db.content_reactions = [];
+    const idx = this.db.content_reactions.findIndex((r) => r.target_type === targetType && r.target_id === targetId && Number(r.user_id) === Number(userId));
+
+    if (idx >= 0) {
+      const existing = this.db.content_reactions[idx];
+      if (existing.reaction_type === reactionType) {
+        // Toggle off
+        this.db.content_reactions.splice(idx, 1);
+      } else {
+        // Switch reaction
+        this.db.content_reactions[idx].reaction_type = reactionType;
+        this.db.content_reactions[idx].updated_at = new Date().toISOString();
+      }
+    } else {
+      // Add reaction
+      this.db.content_reactions.push({
+        id: `react-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        user_id: userId,
+        target_type: targetType,
+        target_id: targetId,
+        reaction_type: reactionType,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      });
+    }
+
+    this.queueSave('REACTION_TOGGLED', { targetType, targetId, userId });
+    return this.getReactions(targetType, targetId, userId);
+  }
+
+  // --- COMMENTS & MODERATION ---
+  public getComments(targetType: string, targetId: string, currentUserId?: number): any[] {
+    if (!this.db.comments) this.db.comments = [];
+    const rawComments = this.db.comments.filter((c) => c.target_type === targetType && c.target_id === targetId && !c.is_deleted);
+
+    // Sort chronologically descending (newest first)
+    rawComments.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+    return rawComments.map((c) => {
+      const likedBy: number[] = Array.isArray(c.liked_by_users) ? c.liked_by_users : [];
+      const isLiked = currentUserId ? likedBy.includes(Number(currentUserId)) : false;
+      return {
+        id: c.id,
+        target_type: c.target_type,
+        target_id: c.target_id,
+        user_id: String(c.user_id),
+        username: c.username,
+        user_avatar: c.user_avatar,
+        badge: c.badge || 'Viewer',
+        text: c.text,
+        created_at: c.created_at,
+        likes_count: c.likes_count || likedBy.length,
+        is_liked: isLiked,
+        replies_count: 0
+      };
+    });
+  }
+
+  public postComment(data: { target_type: string; target_id: string; user_id: number; username: string; user_avatar?: string; text: string }): any {
+    const user = this.getUser(data.user_id);
+    if (user?.is_suspended) {
+      throw new Error('Your account is suspended. You cannot post comments.');
+    }
+
+    if (!data.text || !data.text.trim()) {
+      throw new Error('Comment text cannot be empty.');
+    }
+
+    if (!this.db.comments) this.db.comments = [];
+
+    const record = {
+      id: `c-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      target_type: data.target_type,
+      target_id: data.target_id,
+      user_id: data.user_id,
+      username: data.username.trim() || 'Viewer',
+      user_avatar: data.user_avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=120&q=80',
+      badge: user?.username === 'rajpapa' ? 'Admin' : 'Viewer',
+      text: data.text.trim(),
+      likes_count: 0,
+      liked_by_users: [],
+      is_deleted: false,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+
+    this.db.comments.unshift(record);
+    this.queueSave('COMMENT_POSTED', { commentId: record.id, userId: data.user_id });
+
+    return {
+      id: record.id,
+      target_type: record.target_type,
+      target_id: record.target_id,
+      user_id: String(record.user_id),
+      username: record.username,
+      user_avatar: record.user_avatar,
+      badge: record.badge,
+      text: record.text,
+      created_at: record.created_at,
+      likes_count: 0,
+      is_liked: false,
+      replies_count: 0
+    };
+  }
+
+  public toggleLikeComment(commentId: string, userId: number): { likes_count: number; is_liked: boolean } {
+    if (!this.db.comments) this.db.comments = [];
+    const comment = this.db.comments.find((c) => c.id === commentId && !c.is_deleted);
+    if (!comment) throw new Error('Comment not found');
+
+    if (!Array.isArray(comment.liked_by_users)) comment.liked_by_users = [];
+    const uidNum = Number(userId);
+    const idx = comment.liked_by_users.indexOf(uidNum);
+
+    let isLiked = false;
+    if (idx >= 0) {
+      comment.liked_by_users.splice(idx, 1);
+      isLiked = false;
+    } else {
+      comment.liked_by_users.push(uidNum);
+      isLiked = true;
+    }
+
+    comment.likes_count = comment.liked_by_users.length;
+    this.queueSave('COMMENT_LIKE_TOGGLED', { commentId, userId });
+
+    return { likes_count: comment.likes_count, is_liked: isLiked };
+  }
+
+  public getAllCommentsForAdmin(): any[] {
+    if (!this.db.comments) this.db.comments = [];
+    return this.db.comments
+      .filter((c) => !c.is_deleted)
+      .map((c) => {
+        const authorUser = this.getUser(Number(c.user_id));
+        return {
+          id: c.id,
+          target_type: c.target_type,
+          target_id: c.target_id,
+          user_id: c.user_id,
+          username: c.username,
+          user_avatar: c.user_avatar,
+          text: c.text,
+          likes_count: c.likes_count || 0,
+          created_at: c.created_at,
+          is_author_suspended: authorUser?.is_suspended || false
+        };
+      })
+      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+  }
+
+  public deleteComment(commentId: string): boolean {
+    if (!this.db.comments) this.db.comments = [];
+    const comment = this.db.comments.find((c) => c.id === commentId);
+    if (comment) {
+      comment.is_deleted = true;
+      this.queueSave('COMMENT_DELETED', { commentId });
+      return true;
+    }
+    return false;
+  }
+
+  public deleteCommentAndBanUser(commentId: string, reason?: string): { success: boolean; userId?: number } {
+    if (!this.db.comments) this.db.comments = [];
+    const comment = this.db.comments.find((c) => c.id === commentId);
+    if (!comment) return { success: false };
+
+    comment.is_deleted = true;
+    const userId = Number(comment.user_id);
+    if (userId) {
+      this.suspendUser(userId, true, reason || 'Inappropriate comment policy violation');
+    }
+
+    // Also soft-delete all other comments by this user
+    this.db.comments.forEach((c) => {
+      if (Number(c.user_id) === userId) {
+        c.is_deleted = true;
+      }
+    });
+
+    this.queueSave('COMMENT_DELETED_AND_USER_BANNED', { commentId, userId });
+    return { success: true, userId };
+  }
+
 }
 
 export const db = new DatabaseEngine();

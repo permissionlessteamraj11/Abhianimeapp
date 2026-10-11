@@ -380,3 +380,38 @@ CREATE TABLE IF NOT EXISTS app_settings (
     value JSONB NOT NULL,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
+
+-- ---------------------------------------------------------------------
+-- 13. COMMENTS & CONTENT REACTIONS (LIKES / DISLIKES)
+-- ---------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS content_reactions (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    user_id BIGINT NOT NULL,
+    target_type VARCHAR(16) NOT NULL CHECK (target_type IN ('anime', 'movie', 'episode')),
+    target_id VARCHAR(128) NOT NULL,
+    reaction_type VARCHAR(16) NOT NULL CHECK (reaction_type IN ('like', 'dislike')),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    UNIQUE(user_id, target_type, target_id)
+);
+
+CREATE INDEX idx_content_reactions_target ON content_reactions(target_type, target_id);
+
+CREATE TABLE IF NOT EXISTS comments (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    target_type VARCHAR(16) NOT NULL CHECK (target_type IN ('anime', 'movie', 'episode')),
+    target_id VARCHAR(128) NOT NULL,
+    parent_comment_id UUID REFERENCES comments(id) ON DELETE CASCADE,
+    user_id BIGINT NOT NULL,
+    username VARCHAR(128) NOT NULL,
+    user_avatar TEXT,
+    badge VARCHAR(64) DEFAULT 'Viewer',
+    text TEXT NOT NULL,
+    likes_count INT DEFAULT 0,
+    liked_by_users JSONB DEFAULT '[]'::jsonb,
+    is_deleted BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE INDEX idx_comments_target ON comments(target_type, target_id, created_at DESC);

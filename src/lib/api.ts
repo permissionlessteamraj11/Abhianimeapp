@@ -1483,5 +1483,99 @@ export const api = {
       body: jsonString
     });
     return await handleResponse(res);
+  },
+
+
+  // --- Persistent Content Reactions (Likes / Dislikes) ---
+  async getReactions(targetType: string, targetId: string): Promise<{ likesCount: number; dislikesCount: number; userReaction: 'like' | 'dislike' | null }> {
+    try {
+      const tgUser = getTelegramUser();
+      const res = await fetch(apiUrl(`/api/reactions?target_type=${encodeURIComponent(targetType)}&target_id=${encodeURIComponent(targetId)}&user_id=${tgUser.id}`));
+      return await handleResponse(res);
+    } catch {
+      return { likesCount: 0, dislikesCount: 0, userReaction: null };
+    }
+  },
+
+  async toggleReaction(targetType: string, targetId: string, reactionType: 'like' | 'dislike'): Promise<{ likesCount: number; dislikesCount: number; userReaction: 'like' | 'dislike' | null }> {
+    const tgUser = getTelegramUser();
+    const res = await fetch(apiUrl('/api/reactions'), {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({
+        target_type: targetType,
+        target_id: targetId,
+        user_id: tgUser.id,
+        reaction_type: reactionType
+      })
+    });
+    return await handleResponse(res);
+  },
+
+  // --- Persistent Comments ---
+  async getComments(targetType: string, targetId: string): Promise<import("../types").Comment[]> {
+    try {
+      const tgUser = getTelegramUser();
+      const res = await fetch(apiUrl(`/api/comments?target_type=${encodeURIComponent(targetType)}&target_id=${encodeURIComponent(targetId)}&user_id=${tgUser.id}`));
+      return await handleResponse(res);
+    } catch {
+      return [];
+    }
+  },
+
+  async postComment(targetType: string, targetId: string, text: string): Promise<import("../types").Comment> {
+    const tgUser = getTelegramUser();
+    const name = tgUser.first_name ? `${tgUser.first_name} ${tgUser.last_name || ''}`.trim() : 'Viewer';
+    const res = await fetch(apiUrl('/api/comments'), {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({
+        target_type: targetType,
+        target_id: targetId,
+        user_id: tgUser.id,
+        username: name,
+        user_avatar: tgUser.photo_url || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=120&q=80',
+        text
+      })
+    });
+    return await handleResponse(res);
+  },
+
+  async toggleLikeComment(commentId: string): Promise<{ likes_count: number; is_liked: boolean }> {
+    const tgUser = getTelegramUser();
+    const res = await fetch(apiUrl(`/api/comments/${commentId}/like`), {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({ user_id: tgUser.id })
+    });
+    return await handleResponse(res);
+  },
+
+  // --- Admin Comment Moderation ---
+  async adminGetComments(): Promise<(import("../types").Comment & { is_author_suspended?: boolean; target_type: string; target_id: string })[]> {
+    try {
+      const res = await fetch(apiUrl('/api/admin/comments'), { headers: getHeaders() });
+      return await handleResponse(res);
+    } catch {
+      return [];
+    }
+  },
+
+  async adminDeleteComment(commentId: string): Promise<{ success: boolean }> {
+    const res = await fetch(apiUrl(`/api/admin/comments/${commentId}`), {
+      method: 'DELETE',
+      headers: getHeaders()
+    });
+    return await handleResponse(res);
+  },
+
+  async adminBanUserAndDeleteComments(commentId: string, reason?: string): Promise<{ success: boolean; userId?: number }> {
+    const res = await fetch(apiUrl(`/api/admin/comments/${commentId}/ban-author`), {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({ reason })
+    });
+    return await handleResponse(res);
   }
+
 };
