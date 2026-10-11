@@ -521,7 +521,7 @@ Episode ko save karne ke liye video par reply karein ya caption ke saath bhejien
 }
 
 const NEON_CONN_STRING = "postgresql://neondb_owner:npg_UaFhV4xQkoK3@ep-dry-shadow-ayej0k9w-pooler.c-5.us-east-2.aws.neon.tech/neondb?sslmode=require";
-const NEON_SQL_URL = "https://ep-dry-shadow-ayej0k9w-pooler.c-5.us-east-2.aws.neon.tech/sql";
+const NEON_SQL_URL = "https://ep-dry-shadow-ayej0k9w.c-5.us-east-2.aws.neon.tech/sql";
 
 async function queryNeon(env, sql, params = []) {
   const connStr = (env && (env.DATABASE_URL || env.POSTGRES_URL)) || NEON_CONN_STRING;
