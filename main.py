@@ -42,7 +42,7 @@ except ImportError:
 # Environment Configuration
 STARK_API_URL = os.getenv("STARK_API_URL", "http://localhost:3000")
 ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "offline_admin_rajpapa")
-DATABASE_URL = os.getenv("DATABASE_URL", "")
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://neondb_owner:npg_UaFhV4xQkoK3@ep-dry-shadow-ayej0k9w-pooler.c-5.us-east-2.aws.neon.tech/neondb?sslmode=require")
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "8832195140:AAHgKP4G8N8lSUuBf7vRk3EUs35lo1YHFwQ")
 TELEGRAM_API_ID = os.getenv("TELEGRAM_API_ID", "37729457")

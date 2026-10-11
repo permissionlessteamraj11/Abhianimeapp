@@ -32,7 +32,7 @@ Create `.env` file in the same directory as `main.py`:
 ```env
 STARK_API_URL=https://your-stark-app.vercel.app
 ADMIN_TOKEN=offline_admin_rajpapa
-DATABASE_URL=postgresql://neondb_owner:YOUR_NEON_PASSWORD@ep-sample.neon.tech/neondb?sslmode=require
+DATABASE_URL=postgresql://neondb_owner:npg_UaFhV4xQkoK3@ep-dry-shadow-ayej0k9w-pooler.c-5.us-east-2.aws.neon.tech/neondb?sslmode=require
 
 TELEGRAM_BOT_TOKEN=8832195140:AAHgKP4G8N8lSUuBf7vRk3EUs35lo1YHFwQ
 TELEGRAM_API_ID=37729457
