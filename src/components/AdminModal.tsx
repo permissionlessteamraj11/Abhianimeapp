@@ -21,6 +21,7 @@ import {
   Sparkles,
   Sliders,
   Users,
+  MessageSquare,
   History,
   Settings as SettingsIcon,
   Plus,
@@ -65,6 +66,7 @@ type AdminTab =
   | 'broadcast'
   | 'streaming'
   | 'users'
+  | 'comments'
   | 'database'
   | 'sheets'
   | 'audit'
@@ -121,6 +123,8 @@ export const AdminModal: React.FC<AdminModalProps> = ({ onClose, onRefreshCatalo
   const [auditLogs, setAuditLogs] = useState<AdminAuditLog[]>([]);
   const [appSettings, setAppSettings] = useState<AppSettings | null>(null);
   const [searchUserQuery, setSearchUserQuery] = useState('');
+  const [adminComments, setAdminComments] = useState<any[]>([]);
+  const [searchCommentQuery, setSearchCommentQuery] = useState('');
 
   // Genre and placement input helpers
   const [customGenreInput, setCustomGenreInput] = useState('');
@@ -187,7 +191,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({ onClose, onRefreshCatalo
   // Load Dashboard Data when logged in
   const loadAll = async () => {
     try {
-      const [dash, aList, mList, hb, sec, cats, usrs, logs, sttngs, dbInfo] = await Promise.all([
+      const [dash, aList, mList, hb, sec, cats, usrs, commsList, logs, sttngs, dbInfo] = await Promise.all([
         api.adminGetDashboard(),
         api.adminGetAnime(),
         api.adminGetMovies(),
@@ -195,6 +199,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({ onClose, onRefreshCatalo
         api.adminGetSections(),
         api.getCategories(),
         api.adminGetUsers(),
+        api.adminGetComments(),
         api.adminGetAuditLogs(),
         api.adminGetSettings(),
         api.adminGetDbStats()
@@ -206,6 +211,7 @@ export const AdminModal: React.FC<AdminModalProps> = ({ onClose, onRefreshCatalo
       setSections(sec);
       setCategories(cats);
       setUserList(usrs);
+      if (Array.isArray(commsList)) setAdminComments(commsList);
       setAuditLogs(logs);
       setAppSettings(sttngs);
       setDbStats(dbInfo);
@@ -684,6 +690,32 @@ export const AdminModal: React.FC<AdminModalProps> = ({ onClose, onRefreshCatalo
     showNotification('Homepage section updated.');
   };
 
+
+  // Delete comment handler
+  const handleDeleteComment = async (commentId: string) => {
+    try {
+      await api.adminDeleteComment(commentId);
+      setAdminComments((prev) => prev.filter((c) => c.id !== commentId));
+      showNotification('Comment deleted.');
+    } catch {
+      showNotification('Failed to delete comment.');
+    }
+  };
+
+  // Delete comment & ban author handler
+  const handleBanAuthorAndDeleteComment = async (commentId: string, username: string) => {
+    if (!confirm(`Are you sure you want to delete this comment AND suspend user "${username}"?`)) return;
+    try {
+      await api.adminBanUserAndDeleteComments(commentId, 'Inappropriate comment policy violation');
+      setAdminComments((prev) => prev.filter((c) => c.id !== commentId));
+      const updatedUsers = await api.adminGetUsers();
+      setUserList(updatedUsers);
+      showNotification(`Comment deleted and user "${username}" suspended!`);
+    } catch {
+      showNotification('Failed to ban user.');
+    }
+  };
+
   // Suspend / Unsuspend user
   const handleToggleUserSuspend = async (userId: number, currentSuspended: boolean) => {
     await api.adminToggleUserSuspend(userId, !currentSuspended);
@@ -981,6 +1013,16 @@ export const AdminModal: React.FC<AdminModalProps> = ({ onClose, onRefreshCatalo
                   Google Sheets
                   <span className="text-[9px] px-1.5 py-0.5 bg-emerald-950 text-emerald-300 border border-emerald-800 rounded font-mono font-bold">Drive</span>
                 </span>
+              </button>
+
+              <button
+                onClick={() => setCurrentTab('comments')}
+                className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold whitespace-nowrap transition-colors ${
+                  currentTab === 'comments' ? 'bg-rose-500/20 text-rose-300' : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <MessageSquare className="w-4 h-4" />
+                <span>Comments ({adminComments.length})</span>
               </button>
 
               <button
@@ -2487,7 +2529,93 @@ export const AdminModal: React.FC<AdminModalProps> = ({ onClose, onRefreshCatalo
                 </div>
               )}
 
-              {/* =====================================================================
+                            {/* =====================================================================
+                  TAB: COMMENTS MODERATION
+                  ===================================================================== */}
+              {currentTab === 'comments' && (
+                <div>
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+                    <div>
+                      <h2 className="font-['Syne'] font-bold text-lg text-white">Comments Moderation</h2>
+                      <p className="text-xs text-slate-400">Review community comments, remove policy-violating text, or ban bad actors with 1-click.</p>
+                    </div>
+                    <input
+                      type="text"
+                      placeholder="Search comments or users..."
+                      value={searchCommentQuery}
+                      onChange={(e) => setSearchCommentQuery(e.target.value)}
+                      className="bg-slate-900 border border-slate-800 rounded-xl px-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-cyan-500 w-full sm:w-64"
+                    />
+                  </div>
+
+                  <div className="flex flex-col gap-3">
+                    {adminComments
+                      .filter((c) =>
+                        !searchCommentQuery ||
+                        String(c.username || '').toLowerCase().includes(searchCommentQuery.toLowerCase()) ||
+                        String(c.text || '').toLowerCase().includes(searchCommentQuery.toLowerCase())
+                      )
+                      .map((c) => (
+                        <div key={c.id} className="p-4 rounded-2xl bg-slate-900/90 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                          <div className="flex items-start gap-3 flex-1">
+                            <div className="w-9 h-9 rounded-full bg-slate-800 flex items-center justify-center font-bold text-xs text-cyan-400 shrink-0 overflow-hidden">
+                              {c.user_avatar ? (
+                                <img src={c.user_avatar} alt={c.username} className="w-full h-full object-cover" />
+                              ) : (
+                                c.username[0]?.toUpperCase()
+                              )}
+                            </div>
+                            <div className="flex flex-col gap-1 flex-1">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="font-bold text-sm text-white">{c.username}</span>
+                                <span className="text-[10px] text-slate-500">
+                                  {typeof c.created_at === 'string' && c.created_at.includes('T')
+                                    ? new Date(c.created_at).toLocaleString()
+                                    : c.created_at}
+                                </span>
+                                {c.is_author_suspended && (
+                                  <span className="px-1.5 py-0.5 rounded text-[9px] bg-rose-500/20 text-rose-400 border border-rose-500/30 font-bold">
+                                    SUSPENDED USER
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-xs text-slate-300 bg-slate-950/60 p-2.5 rounded-xl border border-slate-800/80 leading-relaxed">
+                                "{c.text}"
+                              </p>
+                              <div className="flex items-center gap-3 text-[10px] text-slate-400 pt-0.5">
+                                <span>Target: <strong className="text-slate-300 uppercase">{c.target_type}</strong> ({c.target_id})</span>
+                                <span>Likes: <strong className="text-rose-400">{c.likes_count}</strong></span>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-2 self-end sm:self-center shrink-0">
+                            <button
+                              onClick={() => handleDeleteComment(c.id)}
+                              className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-rose-950 hover:text-rose-300 border border-slate-700 text-xs font-semibold text-slate-300 transition-all"
+                            >
+                              Delete Comment
+                            </button>
+                            <button
+                              onClick={() => handleBanAuthorAndDeleteComment(c.id, c.username)}
+                              className="px-3 py-1.5 rounded-xl bg-rose-600/20 hover:bg-rose-600 text-rose-300 hover:text-white border border-rose-500/30 text-xs font-semibold transition-all"
+                            >
+                              Delete & Ban User
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+
+                    {adminComments.length === 0 && (
+                      <div className="p-8 text-center text-xs text-slate-500 bg-slate-900/50 rounded-2xl border border-slate-800">
+                        No community comments yet.
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+{/* =====================================================================
                   TAB: USERS MODERATION
                   ===================================================================== */}
               {currentTab === 'users' && (

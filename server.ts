@@ -844,6 +844,106 @@ app.post('/api/admin/users/:telegramId/suspend', requireAdmin, (req: Request, re
   res.json({ success: ok });
 });
 
+
+// --- CONTENT REACTIONS (LIKES & DISLIKES) ---
+app.get('/api/reactions', (req: Request, res: Response) => {
+  const targetType = String(req.query.target_type || '');
+  const targetId = String(req.query.target_id || '');
+  const userId = req.query.user_id ? Number(req.query.user_id) : undefined;
+
+  if (!targetType || !targetId) {
+    return res.status(400).json({ message: 'target_type and target_id are required' });
+  }
+
+  const result = db.getReactions(targetType, targetId, userId);
+  res.json(result);
+});
+
+app.post('/api/reactions', (req: Request, res: Response) => {
+  const { target_type, target_id, user_id, reaction_type } = req.body;
+  if (!target_type || !target_id || !user_id || !reaction_type) {
+    return res.status(400).json({ message: 'Missing required fields' });
+  }
+
+  try {
+    const result = db.toggleReaction(target_type, target_id, Number(user_id), reaction_type);
+    res.json(result);
+  } catch (err: any) {
+    res.status(403).json({ message: err.message || 'Action failed' });
+  }
+});
+
+// --- COMMENTS & REPLIES ---
+app.get('/api/comments', (req: Request, res: Response) => {
+  const targetType = String(req.query.target_type || '');
+  const targetId = String(req.query.target_id || '');
+  const userId = req.query.user_id ? Number(req.query.user_id) : undefined;
+
+  if (!targetType || !targetId) {
+    return res.status(400).json({ message: 'target_type and target_id are required' });
+  }
+
+  const comments = db.getComments(targetType, targetId, userId);
+  res.json(comments);
+});
+
+app.post('/api/comments', (req: Request, res: Response) => {
+  const { target_type, target_id, user_id, username, user_avatar, text } = req.body;
+  if (!target_type || !target_id || !user_id || !text) {
+    return res.status(400).json({ message: 'Missing required comment parameters' });
+  }
+
+  try {
+    const comment = db.postComment({
+      target_type,
+      target_id,
+      user_id: Number(user_id),
+      username: username || 'Viewer',
+      user_avatar,
+      text
+    });
+    res.json(comment);
+  } catch (err: any) {
+    res.status(403).json({ message: err.message || 'Could not post comment' });
+  }
+});
+
+app.post('/api/comments/:id/like', (req: Request, res: Response) => {
+  const commentId = req.params.id;
+  const { user_id } = req.body;
+  if (!user_id) {
+    return res.status(400).json({ message: 'user_id is required' });
+  }
+
+  try {
+    const result = db.toggleLikeComment(commentId, Number(user_id));
+    res.json(result);
+  } catch (err: any) {
+    res.status(400).json({ message: err.message || 'Failed to toggle comment like' });
+  }
+});
+
+// --- ADMIN COMMENT MODERATION & BAN ---
+app.get('/api/admin/comments', requireAdmin, (_req: Request, res: Response) => {
+  res.json(db.getAllCommentsForAdmin());
+});
+
+app.delete('/api/admin/comments/:id', requireAdmin, (req: Request, res: Response) => {
+  const commentId = req.params.id;
+  const deleted = db.deleteComment(commentId);
+  logAdminAction('rajpapa', 'DELETE_COMMENT', 'comment', commentId);
+  res.json({ success: deleted });
+});
+
+app.post('/api/admin/comments/:id/ban-author', requireAdmin, (req: Request, res: Response) => {
+  const commentId = req.params.id;
+  const { reason } = req.body;
+  const result = db.deleteCommentAndBanUser(commentId, reason);
+  logAdminAction('rajpapa', 'BAN_USER_AND_DELETE_COMMENTS', 'comment', commentId, { userId: result.userId, reason });
+  res.json(result);
+});
+
+
 // Admin Audit Logs & Settings
 app.get('/api/admin/audit-logs', requireAdmin, (_req: Request, res: Response) => {
   res.json(db.getAuditLogs());
