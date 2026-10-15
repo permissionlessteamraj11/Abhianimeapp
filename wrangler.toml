@@ -1,5 +1,5 @@
 name = "abhianimeapp"
-main = "bot/worker.js"
+main = "./bot/worker.js"
 compatibility_date = "2024-09-23"
 compatibility_flags = ["nodejs_compat"]
 
