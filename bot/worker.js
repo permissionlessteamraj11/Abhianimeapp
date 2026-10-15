@@ -520,35 +520,7 @@ Episode ko save karne ke liye video par reply karein ya caption ke saath bhejien
   }
 }
 
-const NEON_CONN_STRING = "postgresql://neondb_owner:npg_UaFhV4xQkoK3@ep-dry-shadow-ayej0k9w-pooler.c-5.us-east-2.aws.neon.tech/neondb?sslmode=require";
-const NEON_SQL_URL = "https://ep-dry-shadow-ayej0k9w.c-5.us-east-2.aws.neon.tech/sql";
-
-async function queryNeon(env, sql, params = []) {
-  const connStr = (env && (env.DATABASE_URL || env.POSTGRES_URL)) || NEON_CONN_STRING;
-  const res = await fetch(NEON_SQL_URL, {
-    method: 'POST',
-    headers: {
-      'neon-connection-string': connStr,
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({ query: sql, params })
-  });
-  if (!res.ok) {
-    const errText = await res.text();
-    throw new Error(`Neon SQL error: ${res.status} ${errText}`);
-  }
-  return await res.json();
-}
-
 async function getCatalog(env) {
-  try {
-    const result = await queryNeon(env, "SELECT data FROM public.stark_catalog WHERE id = 'master_catalog';");
-    if (result.rows && result.rows.length > 0 && result.rows[0].data) {
-      return result.rows[0].data;
-    }
-  } catch (err) {
-    console.error('[Worker] Error reading Neon DB:', err);
-  }
   if (env && env.STARK_ANIME_KV) {
     try {
       const data = await env.STARK_ANIME_KV.get('catalog', { type: 'json' });
@@ -561,16 +533,6 @@ async function getCatalog(env) {
 async function saveCatalog(env, catalog) {
   catalog.version = (catalog.version || 1) + 1;
   catalog.last_updated_at = new Date().toISOString();
-
-  try {
-    await queryNeon(
-      env,
-      "INSERT INTO public.stark_catalog (id, data, updated_at) VALUES ('master_catalog', $1, NOW()) ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data, updated_at = NOW();",
-      [JSON.stringify(catalog)]
-    );
-  } catch (err) {
-    console.error('[Worker] Error saving to Neon DB:', err);
-  }
 
   if (env && env.STARK_ANIME_KV) {
     try {
