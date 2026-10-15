@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import Hls from 'hls.js';
 import { Anime, Movie, Episode, VideoQuality, Season, Comment, CommentReply } from '../types';
-import { api } from '../lib/api';
+import { api, getMediaUrl } from '../lib/api';
 import { haptic, getTelegramUser } from '../lib/telegram';
 import {
   Play,
@@ -223,7 +223,7 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
       }
 
       if (epStream) {
-        setStreamUrl(epStream);
+        setStreamUrl(getMediaUrl(epStream));
         setCurrentQuality(quality);
         setIsLoadingStream(false);
         if (resumeTime !== undefined && videoRef.current) {
@@ -240,7 +240,7 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
         quality
       });
 
-      setStreamUrl(res.streamUrl);
+      setStreamUrl(getMediaUrl(res.streamUrl));
       setCurrentQuality(res.quality);
       if (res.availableQualities && res.availableQualities.length > 0) {
         setAvailableQualities(res.availableQualities);
@@ -1119,7 +1119,7 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
                     {/* Thumbnail */}
                     <div className="relative w-28 aspect-video rounded-xl overflow-hidden bg-slate-900 shrink-0">
                       <img
-                        src={ep.thumbnail_url || content.backdrop_url || content.poster_url}
+                        src={getMediaUrl(ep.thumbnail_url || content.backdrop_url || content.poster_url)}
                         alt={ep.title}
                         className="w-full h-full object-cover"
                         onError={(e) => {

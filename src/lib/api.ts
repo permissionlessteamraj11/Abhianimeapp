@@ -51,6 +51,23 @@ export function setCustomApiUrl(url: string) {
   }
 }
 
+export function getMediaUrl(url: string | undefined | null): string {
+  if (!url) return '';
+  const trimmed = url.trim();
+  if (
+    trimmed.startsWith('http://') ||
+    trimmed.startsWith('https://') ||
+    trimmed.startsWith('blob:') ||
+    trimmed.startsWith('data:')
+  ) {
+    return trimmed;
+  }
+  const base = getApiBaseUrl();
+  if (!base) return trimmed;
+  const cleanPath = trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
+  return `${base}${cleanPath}`;
+}
+
 function apiUrl(endpoint: string): string {
   const base = getApiBaseUrl();
   const cleanEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
@@ -422,7 +439,11 @@ export const api = {
         headers: getHeaders(),
         body: JSON.stringify(params)
       });
-      return await handleResponse(res);
+      const data = await handleResponse<SignedPlaybackToken>(res);
+      if (data && data.streamUrl) {
+        data.streamUrl = getMediaUrl(data.streamUrl);
+      }
+      return data;
     } catch {
       const streamUrls: Record<string, string> = {
         '360p': 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4',
