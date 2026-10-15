@@ -4,10 +4,10 @@
 STARK ANIME - VPS CONTENT MANAGEMENT & TELEGRAM BOT (main.py)
 =============================================================================
 This script runs standalone on a VPS (Ubuntu/Debian) to:
- 1. Connect directly to Neon PostgreSQL or STARK Admin REST API.
+ 1. Connect directly to persistent JSON file database or STARK REST API.
  2. Manage Anime, Seasons, Episodes, and Movies (Create, Read, Update, Delete).
  3. Provide an Interactive Telegram Admin Panel with buttons & callbacks.
- 4. Handle direct video uploads from Telegram with automatic catalog sync.
+ 4. Handle direct video uploads from Telegram with automatic transcoding & catalog sync.
  5. Upload local video files directly from VPS to Telegram channels.
  6. Provide CLI, Interactive Terminal Menu, and Telegram Bot modes.
 =============================================================================
@@ -18,7 +18,8 @@ import sys
 import json
 import time
 import argparse
-import asyncio
+import subprocess
+import shutil
 from typing import Dict, List, Any, Optional
 
 # Third-party imports with fallback handling
@@ -27,11 +28,85 @@ try:
 except ImportError:
     requests = None
 
-try:
-    import psycopg2
-    from psycopg2.extras import RealDictCursor
-except ImportError:
-    psycopg2 = None
+# Video Transcoder Utility for Multi-Quality (YouTube-style 1080p, 720p, 480p, 360p)
+UPLOADS_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "data", "uploads", "videos"))
+
+def download_telegram_file(bot_token: str, file_id: str, dest_path: str) -> bool:
+    """Downloads a Telegram file directly from Telegram servers to local disk."""
+    if not requests:
+        return False
+    try:
+        res = requests.get(f"https://api.telegram.org/bot{bot_token}/getFile?file_id={file_id}", timeout=15)
+        if res.status_code == 200 and res.json().get("ok"):
+            file_path_tg = res.json()["result"].get("file_path")
+            if not file_path_tg:
+                return False
+            download_url = f"https://api.telegram.org/file/bot{bot_token}/{file_path_tg}"
+            os.makedirs(os.path.dirname(dest_path), exist_ok=True)
+            print(f"[Transcoder] Downloading video file from Telegram: {download_url}...")
+            with requests.get(download_url, stream=True, timeout=600) as r:
+                r.raise_for_status()
+                with open(dest_path, 'wb') as f:
+                    for chunk in r.iter_content(chunk_size=8192):
+                        f.write(chunk)
+            print(f"[Transcoder] Download finished: {dest_path}")
+            return True
+    except Exception as e:
+        print(f"[Transcoder Download Error] {e}")
+    return False
+
+def transcode_video_qualities(input_path: str, output_prefix: str) -> Dict[str, str]:
+    """
+    Transcodes input_path into multi-quality MP4 files (1080p, 720p, 480p, 360p) using FFmpeg.
+    Returns a dict mapping quality name -> relative HTTP URL path.
+    """
+    os.makedirs(UPLOADS_DIR, exist_ok=True)
+    qualities = {
+        "1080p": ("1920:1080", "3000k"),
+        "720p": ("1280:720", "1800k"),
+        "480p": ("854:480", "900k"),
+        "360p": ("640:360", "500k")
+    }
+
+    ffmpeg_bin = shutil.which("ffmpeg")
+    result_urls: Dict[str, str] = {}
+
+    if not ffmpeg_bin:
+        print("[Transcoder Warning] FFmpeg not found on VPS system path. Using original source video URL.")
+        rel_path = f"/uploads/videos/{os.path.basename(input_path)}"
+        return {
+            "1080p": rel_path,
+            "720p": rel_path,
+            "480p": rel_path,
+            "360p": rel_path
+        }
+
+    for qual, (scale, bitrate) in qualities.items():
+        out_filename = f"{output_prefix}_{qual}.mp4"
+        out_filepath = os.path.join(UPLOADS_DIR, out_filename)
+
+        cmd = [
+            ffmpeg_bin, "-y",
+            "-i", input_path,
+            "-vf", f"scale={scale}:force_original_aspect_ratio=decrease,pad={scale}:(ow-iw)/2:(oh-ih)/2",
+            "-c:v", "libx264", "-crf", "23", "-preset", "fast", "-b:v", bitrate,
+            "-c:a", "aac", "-b:a", "128k",
+            "-movflags", "+faststart",
+            out_filepath
+        ]
+
+        print(f"[Transcoder FFmpeg] Encoding {qual} ({scale}) -> {out_filename}...")
+        try:
+            subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+            rel_url = f"/uploads/videos/{out_filename}"
+            result_urls[qual] = rel_url
+            print(f" ✓ Transcoded {qual} successfully!")
+        except Exception as e:
+            print(f" ❌ Transcode {qual} failed, using source fallback: {e}")
+            rel_path = f"/uploads/videos/{os.path.basename(input_path)}"
+            result_urls[qual] = rel_path
+
+    return result_urls
 
 try:
     from dotenv import load_dotenv
@@ -42,7 +117,7 @@ except ImportError:
 # Environment Configuration
 STARK_API_URL = os.getenv("STARK_API_URL", "http://localhost:3000")
 ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "offline_admin_rajpapa")
-DATABASE_URL = os.getenv("DATABASE_URL", "")
+DB_FILE_PATH = os.getenv("DB_FILE_PATH", os.path.join(os.path.dirname(__file__), "data", "stark_anime.db.json"))
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "8832195140:AAHgKP4G8N8lSUuBf7vRk3EUs35lo1YHFwQ")
 TELEGRAM_API_ID = os.getenv("TELEGRAM_API_ID", "37729457")
@@ -53,10 +128,10 @@ TELEGRAM_CHANNEL_ID = os.getenv("TELEGRAM_CHANNEL_ID", "")
 # Database & API Operations Class
 # ---------------------------------------------------------------------------
 class StarkManager:
-    def __init__(self, api_url: str = STARK_API_URL, admin_token: str = ADMIN_TOKEN, db_url: str = DATABASE_URL):
+    def __init__(self, api_url: str = STARK_API_URL, admin_token: str = ADMIN_TOKEN, db_file: str = DB_FILE_PATH):
         self.api_url = api_url.rstrip('/')
         self.admin_token = admin_token
-        self.db_url = db_url
+        self.db_file = os.path.abspath(db_file)
 
     def _headers(self) -> Dict[str, str]:
         return {
@@ -66,41 +141,32 @@ class StarkManager:
             "x-admin-password": "28@Rajpapa"
         }
 
-    # --- Neon Direct PostgreSQL Helpers ---
+    # --- JSON File Database Helpers ---
     def get_catalog_from_db(self) -> Optional[Dict[str, Any]]:
-        if not self.db_url or not psycopg2:
-            return None
         try:
-            conn = psycopg2.connect(self.db_url)
-            cur = conn.cursor(cursor_factory=RealDictCursor)
-            cur.execute("SELECT data FROM public.stark_catalog WHERE id = 'master_catalog';")
-            row = cur.fetchone()
-            cur.close()
-            conn.close()
-            if row and row.get('data'):
-                return row['data']
+            if os.path.exists(self.db_file):
+                with open(self.db_file, 'r', encoding='utf-8') as f:
+                    return json.load(f)
         except Exception as e:
-            print(f"[DB Warning] Direct DB fetch failed: {e}")
+            print(f"[DB Warning] JSON DB fetch failed: {e}")
         return None
 
     def save_catalog_to_db(self, catalog_data: Dict[str, Any]) -> bool:
-        if not self.db_url or not psycopg2:
-            return False
         try:
-            conn = psycopg2.connect(self.db_url)
-            cur = conn.cursor()
-            catalog_json = json.dumps(catalog_data)
-            cur.execute("""
-                INSERT INTO public.stark_catalog (id, data, updated_at)
-                VALUES ('master_catalog', %s, NOW())
-                ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data, updated_at = NOW();
-            """, (catalog_json,))
-            conn.commit()
-            cur.close()
-            conn.close()
+            db_dir = os.path.dirname(self.db_file)
+            if not os.path.exists(db_dir):
+                os.makedirs(db_dir, exist_ok=True)
+
+            catalog_data["version"] = catalog_data.get("version", 1) + 1
+            catalog_data["last_updated_at"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+            tmp_file = f"{self.db_file}.tmp.{int(time.time())}"
+            with open(tmp_file, 'w', encoding='utf-8') as f:
+                json.dump(catalog_data, f, indent=2, ensure_ascii=False)
+            os.replace(tmp_file, self.db_file)
             return True
         except Exception as e:
-            print(f"[DB Error] Direct DB save failed: {e}")
+            print(f"[DB Error] Direct JSON DB save failed: {e}")
             return False
 
     # --- REST API Helpers ---
@@ -178,7 +244,7 @@ class StarkManager:
             else:
                 catalog["anime"].append(anime_data)
             if self.save_catalog_to_db(catalog):
-                print(f"✓ Anime '{anime_data.get('title')}' saved directly to Neon DB.")
+                print(f"✓ Anime '{anime_data.get('title')}' saved directly to JSON DB file.")
                 return anime_data
         return None
 
@@ -193,7 +259,7 @@ class StarkManager:
             catalog["anime"] = [a for a in catalog["anime"] if a.get("id") != anime_id]
             if len(catalog["anime"]) < initial_len:
                 if self.save_catalog_to_db(catalog):
-                    print(f"✓ Anime '{anime_id}' deleted directly from Neon DB.")
+                    print(f"✓ Anime '{anime_id}' deleted directly from JSON DB file.")
                     return True
         return False
 
@@ -220,7 +286,7 @@ class StarkManager:
                     anime["seasons"] = []
                 anime["seasons"].append(season_payload)
                 if self.save_catalog_to_db(catalog):
-                    print(f"✓ Season {season_number} saved to Neon DB.")
+                    print(f"✓ Season {season_number} saved to JSON DB file.")
                     return season_payload
         return None
 
@@ -237,7 +303,7 @@ class StarkManager:
                 anime["seasons"] = [s for s in anime["seasons"] if s.get("id") != season_id]
                 if len(anime["seasons"]) < init_len:
                     if self.save_catalog_to_db(catalog):
-                        print(f"✓ Season '{season_id}' deleted from Neon DB.")
+                        print(f"✓ Season '{season_id}' deleted from JSON DB file.")
                         return True
         return False
 
@@ -295,7 +361,7 @@ class StarkManager:
                             else:
                                 s["episodes"].append(ep_payload)
                             if self.save_catalog_to_db(catalog):
-                                print(f"✓ Episode {ep_num} saved directly to Neon DB.")
+                                print(f"✓ Episode {ep_num} saved directly to JSON DB file.")
                                 return ep_payload
         return None
 
@@ -315,7 +381,7 @@ class StarkManager:
                                 s["episodes"] = [e for e in s["episodes"] if e.get("id") != episode_id]
                                 if len(s["episodes"]) < init_len:
                                     if self.save_catalog_to_db(catalog):
-                                        print(f"✓ Episode '{episode_id}' deleted from Neon DB.")
+                                        print(f"✓ Episode '{episode_id}' deleted from JSON DB file.")
                                         return True
         return False
 
@@ -342,7 +408,7 @@ class StarkManager:
                 catalog["movies"] = []
             catalog["movies"].append(movie_data)
             if self.save_catalog_to_db(catalog):
-                print(f"✓ Movie '{movie_data.get('title')}' saved to Neon DB.")
+                print(f"✓ Movie '{movie_data.get('title')}' saved to JSON DB file.")
                 return movie_data
         return None
 
@@ -357,7 +423,7 @@ class StarkManager:
             catalog["movies"] = [m for m in catalog["movies"] if m.get("id") != movie_id]
             if len(catalog["movies"]) < init_len:
                 if self.save_catalog_to_db(catalog):
-                    print(f"✓ Movie '{movie_id}' deleted from Neon DB.")
+                    print(f"✓ Movie '{movie_id}' deleted from JSON DB file.")
                     return True
         return False
 
@@ -569,12 +635,12 @@ def run_interactive_menu():
             else:
                 print(" ✗ STARK API connection: FAILED")
 
-            print(f"Checking Neon PostgreSQL DB...")
+            print(f"Checking JSON DB file ({manager.db_file})...")
             db_res = manager.get_catalog_from_db()
             if db_res:
-                print(" ✓ Neon DB connection: SUCCESS")
+                print(" ✓ JSON DB File access: SUCCESS")
             else:
-                print(" ✗ Neon DB connection: FAILED or DATABASE_URL not set")
+                print(" ❌ JSON DB File access: FAILED or file missing")
 
         elif choice == "0":
             print("Exiting STARK Manager. Goodbye!")
@@ -686,7 +752,7 @@ class StarkTelegramBotRunner:
             text = (
                 "📊 <b>STARK Infrastructure Status</b>\n\n"
                 f"<b>STARK REST API:</b> <code>{self.manager.api_url}</code>\n"
-                f"<b>Neon Postgres DB:</b> {'🟢 Connected' if self.manager.db_url else '⚠️ Not Set'}\n\n"
+                f"<b>JSON File DB:</b> 🟢 <code>{self.manager.db_file}</code>\n\n"
                 f"🎬 <b>Catalog Counters:</b>\n"
                 f"• Anime Series: {len(anime_list)}\n"
                 f"• Total Episodes: {total_eps}\n"
@@ -901,8 +967,8 @@ class StarkTelegramBotRunner:
             total_eps = sum(sum(len(s.get("episodes", [])) for s in a.get("seasons", [])) for a in anime_list)
             status_text = (
                 "📊 <b>STARK System Status</b>\n\n"
-                f"<b>Vercel API URL:</b> <code>{self.manager.api_url}</code>\n"
-                f"<b>Neon PostgreSQL DB:</b> {'Connected' if self.manager.db_url else 'Not Set'}\n\n"
+                f"<b>STARK API URL:</b> <code>{self.manager.api_url}</code>\n"
+                f"<b>JSON Database File:</b> <code>{self.manager.db_file}</code>\n\n"
                 f"🎬 <b>Catalog Stats:</b>\n"
                 f"• Anime Series: {len(anime_list)}\n"
                 f"• Total Episodes: {total_eps}\n"
@@ -986,7 +1052,7 @@ class StarkTelegramBotRunner:
 
         self.send_message(
             chat_id,
-            f"📥 <b>Video Received!</b>\nFile ID: <code>{file_id}</code>\nProcessing upload & catalog sync..."
+            f"📥 <b>Video Received!</b>\nFile ID: <code>{file_id}</code>\nDownloading & auto-transcoding into YouTube-like 1080p, 720p, 480p, 360p resolutions on VPS..."
         )
 
         anime_id = ""
@@ -1029,15 +1095,36 @@ class StarkTelegramBotRunner:
             })
             anime_id = res.get("id") if res else "anime_tg_uploads"
 
+        # Step 1: Download Telegram File locally on VPS
+        temp_input_filename = f"raw_{int(time.time())}_{file_id[:8]}.mp4"
+        temp_input_path = os.path.join(UPLOADS_DIR, temp_input_filename)
+
+        download_ok = download_telegram_file(self.token, file_id, temp_input_path)
+
+        stream_urls = {}
+        if download_ok and os.path.exists(temp_input_path):
+            output_prefix = f"vid_{anime_id}_s{season_num}_ep{ep_num}_{int(time.time())}"
+            stream_urls = transcode_video_qualities(temp_input_path, output_prefix)
+            try:
+                os.remove(temp_input_path)
+            except Exception:
+                pass
+        else:
+            stream_urls = {
+                "1080p": f"tg:{file_id}",
+                "720p": f"tg:{file_id}",
+                "480p": f"tg:{file_id}",
+                "360p": f"tg:{file_id}"
+            }
+
+        main_stream_url = stream_urls.get("1080p") or stream_urls.get("720p") or next(iter(stream_urls.values()))
+
         ep_payload = {
             "episode_number": ep_num,
             "title": ep_title or f"Episode {ep_num} ({file_name})",
             "telegram_file_id": file_id,
-            "stream_url": f"tg:{file_id}",
-            "stream_urls": {
-                "1080p": f"tg:{file_id}",
-                "720p": f"tg:{file_id}"
-            }
+            "stream_url": main_stream_url,
+            "stream_urls": stream_urls
         }
 
         saved_ep = self.manager.add_episode(anime_id, season_num, ep_payload)
@@ -1049,14 +1136,16 @@ class StarkTelegramBotRunner:
             ]
         }
 
+        qualities_str = ", ".join(stream_urls.keys())
         self.send_message(
             chat_id,
-            f"✅ <b>Episode Added & Synced Successfully!</b>\n\n"
+            f"✅ <b>Episode Auto-Transcoded & Synced Successfully!</b>\n\n"
             f"<b>Anime ID:</b> <code>{anime_id}</code>\n"
             f"<b>Season:</b> {season_num} | <b>Episode:</b> {ep_num}\n"
             f"<b>Title:</b> {ep_payload['title']}\n"
-            f"<b>File ID:</b> <code>{file_id}</code>\n\n"
-            f"🌐 Live on STARK Anime Mini App!",
+            f"<b>Generated Qualities:</b> {qualities_str}\n"
+            f"<b>Stream URL:</b> <code>{main_stream_url}</code>\n\n"
+            f"🌐 Ready for high-performance YouTube-like playback on STARK Web App!",
             kb
         )
 

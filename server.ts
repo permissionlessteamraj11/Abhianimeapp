@@ -40,6 +40,17 @@ if (fs.existsSync(publicDir)) {
   app.use(express.static(publicDir));
 }
 
+// Serve uploaded local videos with Range header support for fast seeking
+const uploadsDir = path.resolve(__dirname, 'data/uploads');
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+}
+app.use('/uploads', express.static(uploadsDir, {
+  acceptRanges: true,
+  cacheControl: true,
+  maxAge: '1d'
+}));
+
 // Authorized streaming fallback sources
 const SAMPLE_STREAM_URLS: Record<string, string> = {
   '360p': 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4',

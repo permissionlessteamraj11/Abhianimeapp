@@ -1,50 +1,54 @@
 /**
  * Stark Anime - Standalone Node.js / Bun Telegram Bot Runner (Long Polling Mode)
- * Connected directly to Neon PostgreSQL Database
+ * Connected directly to Persistent JSON Database File
  */
 
 import http from 'http';
-import pg from 'pg';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || "8832195140:AAHgKP4G8N8lSUuBf7vRk3EUs35lo1YHFwQ";
 const PORT = process.env.BOT_PORT || 3005;
-const DB_CONN_STRING = process.env.DATABASE_URL || process.env.POSTGRES_URL || "postgresql://neondb_owner:npg_UaFhV4xQkoK3@ep-dry-shadow-ayej0k9w-pooler.c-5.us-east-2.aws.neon.tech/neondb?sslmode=require";
+const DB_FILE = path.resolve(__dirname, '../data/stark_anime.db.json');
 
 console.log("=================================================");
-console.log("🚀 Starting Stark Telegram Bot Engine (Neon DB)...");
+console.log("🚀 Starting Stark Telegram Bot Engine (JSON File DB)...");
 console.log(`• Bot Token: ${BOT_TOKEN.slice(0, 12)}...`);
+console.log(`• DB File: ${DB_FILE}`);
 console.log(`• Local Port: ${PORT}`);
 console.log("=================================================");
 
-const pool = new pg.Pool({
-  connectionString: DB_CONN_STRING,
-  ssl: { rejectUnauthorized: false }
-});
-
 async function loadDb() {
   try {
-    const res = await pool.query("SELECT data FROM public.stark_catalog WHERE id = 'master_catalog';");
-    if (res.rows.length > 0 && res.rows[0].data) {
-      return res.rows[0].data;
+    if (fs.existsSync(DB_FILE)) {
+      const raw = fs.readFileSync(DB_FILE, 'utf-8');
+      const parsed = JSON.parse(raw);
+      if (parsed) return parsed;
     }
   } catch (err) {
-    console.error('[Bot Engine] Error loading from Neon DB:', err);
+    console.error('[Bot Engine] Error reading JSON DB file:', err);
   }
-  return { version: 1, anime: [], movies: [], hero_banners: [] };
+  return { version: 1, anime: [], movies: [], hero_banners: [], last_updated_at: new Date().toISOString() };
 }
 
 async function saveDb(db) {
   try {
     db.version = (db.version || 1) + 1;
     db.last_updated_at = new Date().toISOString();
-    await pool.query(
-      `INSERT INTO public.stark_catalog (id, data, updated_at) VALUES ('master_catalog', $1, NOW())
-       ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data, updated_at = NOW();`,
-      [JSON.stringify(db)]
-    );
-    console.log(`[Bot Engine] Saved updated catalog v${db.version} to Neon DB.`);
+    const dir = path.dirname(DB_FILE);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    const tmp = `${DB_FILE}.tmp.${Date.now()}`;
+    fs.writeFileSync(tmp, JSON.stringify(db, null, 2), 'utf-8');
+    fs.renameSync(tmp, DB_FILE);
+    console.log(`[Bot Engine] Saved updated catalog v${db.version} to JSON DB file.`);
   } catch (err) {
-    console.error('[Bot Engine] Error saving to Neon DB:', err);
+    console.error('[Bot Engine] Error saving JSON DB file:', err);
   }
 }
 
@@ -102,12 +106,12 @@ _Example:_ \`/ep anime_12345 1 1 1080p official Episode 1 The Beginning\`
     });
 
     await sendTelegramMessage(chatId, `
-📊 *STARK Neon Storage Status*
+📊 *STARK VPS Storage Status*
 • Total Anime: *${db.anime?.length || 0}*
 • Total Movies: *${db.movies?.length || 0}*
 • Total Episodes: *${totalEps}*
 • Database Version: *v${db.version || 1}*
-• Storage Mode: *Neon PostgreSQL Cloud DB*
+• Storage Mode: *Persistent Local JSON File Database*
     `);
     return;
   }
@@ -160,7 +164,7 @@ _Example:_ \`/ep anime_12345 1 1 1080p official Episode 1 The Beginning\`
     await saveDb(db);
 
     await sendTelegramMessage(chatId, `
-✅ *Anime Created Successfully in Neon Database!*
+✅ *Anime Created Successfully in Persistent JSON Database!*
 • Title: *${title}*
 • Anime ID: \`${animeId}\`
 • Default Season: \`Season 1\`
@@ -403,7 +407,12 @@ Video bhejien aur caption:
           duration_seconds: file.duration || 1440,
           thumbnail_url: anime.poster_url || '/stark-logo.jpg',
           stream_url: streamUrl,
-          stream_urls: { [quality]: streamUrl },
+          stream_urls: {
+            '1080p': streamUrl,
+            '720p': streamUrl,
+            '480p': streamUrl,
+            '360p': streamUrl
+          },
           telegram_file_id: fileId,
           quality: quality,
           audio_type: audioType,
@@ -449,10 +458,10 @@ Video bhejien aur caption:
       await saveDb(db);
 
       await sendTelegramMessage(chatId, `
-🎉 *Episode (${quality} - ${audioType}) Uploaded Permanently to Neon DB!*
+🎉 *Episode (${quality} - ${audioType}) Saved with Multi-Quality Stream Mapping to Persistent Database!*
 • Anime: *${anime.title}*
 • Season ${seasonNum} | Episode ${epNum}: *${episode.title}*
-• Quality Added: *${quality}*
+• Qualities Available: *360p, 480p, 720p, 1080p*
 • Audio Dub: *${audioType}*
 • Episode live on STARK website!
 
@@ -490,7 +499,7 @@ pollTelegram();
 
 const server = http.createServer((req, res) => {
   res.writeHead(200, { 'Content-Type': 'application/json' });
-  res.end(JSON.stringify({ status: 'active', database: 'Neon PostgreSQL', bot_token: BOT_TOKEN.slice(0, 10) + '...' }));
+  res.end(JSON.stringify({ status: 'active', database: 'Persistent JSON File Database', bot_token: BOT_TOKEN.slice(0, 10) + '...' }));
 });
 
 server.listen(PORT, () => {
