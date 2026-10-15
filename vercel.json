@@ -2,13 +2,11 @@
   "version": 2,
   "buildCommand": "vite build",
   "outputDirectory": "dist",
+  "cleanUrls": true,
+  "framework": "vite",
   "rewrites": [
     {
-      "source": "/api/(.*)",
-      "destination": "/api/index.ts"
-    },
-    {
-      "source": "/((?!api/).*)",
+      "source": "/(.*)",
       "destination": "/index.html"
     }
   ]
