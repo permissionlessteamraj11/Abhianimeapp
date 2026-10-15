@@ -10,6 +10,7 @@ const DATA_DIR = path.resolve(__dirname, '../data');
 const BACKUPS_DIR = path.resolve(DATA_DIR, 'backups');
 const DB_FILE = path.resolve(DATA_DIR, 'stark_anime.db.json');
 const BUNDLED_DB_FILE = path.resolve(__dirname, '../data/stark_anime.db.json');
+const PROCESSING_JOBS_FILE = path.resolve(DATA_DIR, 'processing_jobs.json');
 
 // Ensure local directories exist safely
 try {
@@ -21,6 +22,26 @@ try {
   }
 } catch (e) {
   console.warn('[DatabaseEngine] Notice: Initial data directory creation bypassed (read-only environment):', e);
+}
+
+// Sidecar Operational State Interface for Background Video Processing Jobs
+export interface VideoProcessingJob {
+  id: string;
+  anime_id: string;
+  season_id?: string;
+  episode_id?: string;
+  movie_id?: string;
+  source_file: string;
+  original_filename: string;
+  status: 'Queued' | 'Downloading' | 'Validating' | 'Processing' | 'Ready' | 'Published' | 'Failed' | 'Cancelled';
+  progress_percent: number;
+  current_step?: string;
+  qualities_generated: string[];
+  output_urls: Record<string, string>;
+  master_m3u8_url?: string;
+  error_message?: string;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface DatabaseSchema {
@@ -1145,6 +1166,58 @@ class DatabaseEngine {
     return { success: true, userId };
   }
 
+  // --- SIDECAR OPERATIONAL PROCESSING JOBS ---
+  public getProcessingJobs(): VideoProcessingJob[] {
+    try {
+      if (fs.existsSync(PROCESSING_JOBS_FILE)) {
+        const raw = fs.readFileSync(PROCESSING_JOBS_FILE, 'utf-8');
+        return JSON.parse(raw);
+      }
+    } catch (err) {
+      console.error('[DatabaseEngine] Error reading processing jobs file:', err);
+    }
+    return [];
+  }
+
+  public saveProcessingJob(job: VideoProcessingJob): VideoProcessingJob {
+    const jobs = this.getProcessingJobs();
+    const idx = jobs.findIndex((j) => j.id === job.id);
+    job.updated_at = new Date().toISOString();
+    if (idx >= 0) {
+      jobs[idx] = { ...jobs[idx], ...job };
+    } else {
+      jobs.unshift(job);
+    }
+    try {
+      const tmp = `${PROCESSING_JOBS_FILE}.tmp.${Date.now()}`;
+      fs.writeFileSync(tmp, JSON.stringify(jobs, null, 2), 'utf-8');
+      fs.renameSync(tmp, PROCESSING_JOBS_FILE);
+    } catch (err) {
+      console.error('[DatabaseEngine] Error saving processing job:', err);
+    }
+    return job;
+  }
+
+  public getProcessingJobById(id: string): VideoProcessingJob | undefined {
+    return this.getProcessingJobs().find((j) => j.id === id);
+  }
+
+  public deleteProcessingJob(id: string): boolean {
+    let jobs = this.getProcessingJobs();
+    const initLen = jobs.length;
+    jobs = jobs.filter((j) => j.id !== id);
+    if (jobs.length !== initLen) {
+      try {
+        const tmp = `${PROCESSING_JOBS_FILE}.tmp.${Date.now()}`;
+        fs.writeFileSync(tmp, JSON.stringify(jobs, null, 2), 'utf-8');
+        fs.renameSync(tmp, PROCESSING_JOBS_FILE);
+        return true;
+      } catch (err) {
+        console.error('[DatabaseEngine] Error deleting processing job:', err);
+      }
+    }
+    return false;
+  }
 }
 
 export const db = new DatabaseEngine();

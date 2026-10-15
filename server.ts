@@ -40,7 +40,7 @@ if (fs.existsSync(publicDir)) {
   app.use(express.static(publicDir));
 }
 
-// Serve uploaded local videos with Range header support for fast seeking
+// Serve uploaded local videos & HLS stream files with Range header support and HLS MIME types
 const uploadsDir = path.resolve(__dirname, 'data/uploads');
 if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
@@ -48,7 +48,19 @@ if (!fs.existsSync(uploadsDir)) {
 app.use('/uploads', express.static(uploadsDir, {
   acceptRanges: true,
   cacheControl: true,
-  maxAge: '1d'
+  maxAge: '1d',
+  setHeaders: (res, filePath) => {
+    if (filePath.endsWith('.m3u8')) {
+      res.setHeader('Content-Type', 'application/x-mpegURL');
+      res.setHeader('Cache-Control', 'no-cache');
+    } else if (filePath.endsWith('.ts')) {
+      res.setHeader('Content-Type', 'video/mp2t');
+      res.setHeader('Cache-Control', 'public, max-age=31536000');
+    } else if (filePath.endsWith('.mp4')) {
+      res.setHeader('Content-Type', 'video/mp4');
+    }
+    res.setHeader('Access-Control-Allow-Origin', '*');
+  }
 }));
 
 // Authorized streaming fallback sources
@@ -129,25 +141,52 @@ function verifySignedToken(tokenString: string): { valid: boolean; quality?: str
   }
 }
 
-// Admin Auth Middleware
-function requireAdmin(req: Request, res: Response, next: NextFunction) {
+// Admin Auth Middleware with Role-Based Access Control (RBAC)
+export type AdminRole = 'owner' | 'administrator' | 'editor';
+
+interface AuthenticatedAdminRequest extends Request {
+  adminRole?: AdminRole;
+  adminUsername?: string;
+}
+
+function requireAdmin(req: AuthenticatedAdminRequest, res: Response, next: NextFunction) {
   let token = (req.headers['x-admin-token'] as string) || '';
   if (!token && req.headers.authorization?.startsWith('Bearer ')) {
     token = req.headers.authorization.slice(7).trim();
   }
   const masterKey = req.headers['x-admin-key'] as string;
   const adminPass = req.headers['x-admin-password'] as string;
+  const telegramUserId = req.headers['x-telegram-user-id'] as string;
+
   if (
     masterKey === 'rajpapa_master_key' ||
     adminPass === '28@Rajpapa' ||
     adminPass === '28@rajpapa'
   ) {
+    req.adminRole = 'owner';
+    req.adminUsername = 'rajpapa';
     return next();
   }
-  if (!verifyAdminToken(token)) {
-    return res.status(401).json({ message: 'Unauthorized. Admin credentials required.' });
+
+  if (verifyAdminToken(token)) {
+    req.adminRole = token.includes('editor') ? 'editor' : 'administrator';
+    req.adminUsername = 'admin';
+    return next();
   }
-  next();
+
+  return res.status(401).json({ message: 'Unauthorized. Valid administrative token or credentials required.' });
+}
+
+function requireRole(allowedRoles: AdminRole[]) {
+  return (req: AuthenticatedAdminRequest, res: Response, next: NextFunction) => {
+    requireAdmin(req, res, () => {
+      const userRole = req.adminRole || 'editor';
+      if (allowedRoles.includes(userRole) || userRole === 'owner') {
+        return next();
+      }
+      return res.status(403).json({ message: `Access denied. Requires one of roles: ${allowedRoles.join(', ')}` });
+    });
+  };
 }
 
 function logAdminAction(adminUsername: string, action: string, entityType: string, entityId: string, details?: any, ip?: string) {
@@ -954,6 +993,21 @@ app.post('/api/admin/comments/:id/ban-author', requireAdmin, (req: Request, res:
   res.json(result);
 });
 
+
+// Admin Processing Jobs Sidecar Endpoints
+app.get('/api/admin/processing-jobs', requireAdmin, (_req: Request, res: Response) => {
+  res.json(db.getProcessingJobs());
+});
+
+app.post('/api/admin/processing-jobs', requireAdmin, (req: Request, res: Response) => {
+  const savedJob = db.saveProcessingJob(req.body);
+  res.json(savedJob);
+});
+
+app.delete('/api/admin/processing-jobs/:id', requireAdmin, (req: Request, res: Response) => {
+  const deleted = db.deleteProcessingJob(req.params.id);
+  res.json({ success: deleted });
+});
 
 // Admin Audit Logs & Settings
 app.get('/api/admin/audit-logs', requireAdmin, (_req: Request, res: Response) => {

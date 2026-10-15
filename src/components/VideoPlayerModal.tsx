@@ -217,7 +217,7 @@ export const VideoPlayerModal: React.FC<VideoPlayerModalProps> = ({
       }
 
       // Check if episode or movie has specific quality stream
-      let epStream = sourceUrls?.[quality] || currentEpisode?.stream_url;
+      let epStream = sourceUrls?.[quality] || sourceUrls?.['master'] || currentEpisode?.stream_url;
       if (!epStream && isMovie) {
         epStream = (content as Movie).stream_url;
       }
