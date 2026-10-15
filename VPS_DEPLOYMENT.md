@@ -1,129 +1,136 @@
-# STARK ANIME — VPS Deployment & Video Management Guide (`main.py`)
+# 🚀 STARK ANIME - VPS Deployment Guide (Full Standalone Setup)
 
-Yeh guide aapko `main.py` ko kisi bhi **VPS (Ubuntu / Debian / CentOS)** par deploy karke waha se Anime, Seasons, Episodes, Movies manage aur direct Video Files Telegram par upload karne ka poora tarika bataati hai.
+This guide covers setting up **STARK ANIME** completely on a single Ubuntu / Debian VPS.
 
 ---
 
-## 1. Quick Deploy on VPS (Single File)
+## 📋 System Requirements
 
-VPS par `main.py` aur `.env` file setup karein:
+- **OS:** Ubuntu 22.04 LTS or Debian 12
+- **CPU:** 2+ Cores (Recommended for FFmpeg transcoding)
+- **RAM:** 2GB+ RAM
+- **Storage:** 20GB+ SSD (For storing local database & transcoded videos)
+
+---
+
+## 🛠️ Step 1: Install VPS System Dependencies
 
 ```bash
-# System Update & Dependencies Install
-sudo apt update && sudo apt install -y python3 python3-pip python3-venv ffmpeg git
+# Update System
+sudo apt update && sudo apt upgrade -y
 
-# Directory setup
-mkdir -p /opt/stark-vps-manager && cd /opt/stark-vps-manager
+# Install Essential Tools, Nginx, and FFmpeg
+sudo apt install -y curl git nginx ffmpeg build-essential
 
-# Virtual Environment setup:
-python3 -m venv venv
-source venv/bin/activate
+# Install Bun Runtime
+curl -fsSL https://bun.sh/install | bash
+source ~/.bashrc
 
-# Install lightweight dependencies
-pip install requests psycopg2-binary python-dotenv
+# Install PM2 Process Manager
+npm install -g pm2
 ```
 
 ---
 
-## 2. Environment Variables Configuration (`.env`)
+## 📦 Step 2: Clone & Prepare Project
 
-Create `.env` file in the same directory as `main.py`:
+```bash
+# Clone Repository
+git clone <your-repo-url> /var/www/stark-anime
+cd /var/www/stark-anime
+
+# Install Bun Dependencies
+bun install
+
+# Build Production Frontend Assets
+bun run build
+```
+
+---
+
+## ⚙️ Step 3: Environment Setup
+
+Create `.env` file in `/var/www/stark-anime/.env`:
 
 ```env
-STARK_API_URL=https://your-stark-app.vercel.app
+PORT=3000
+NODE_ENV=production
+JWT_SECRET=stark_vps_secret_key_2026
 ADMIN_TOKEN=offline_admin_rajpapa
-DATABASE_URL=postgresql://neondb_owner:YOUR_NEON_PASSWORD@ep-sample.neon.tech/neondb?sslmode=require
 
+# Telegram Bot Token
 TELEGRAM_BOT_TOKEN=8832195140:AAHgKP4G8N8lSUuBf7vRk3EUs35lo1YHFwQ
-TELEGRAM_API_ID=37729457
-TELEGRAM_API_HASH=bb68973b7efcbbd074cda984c95502d6
-TELEGRAM_CHANNEL_ID=@stark_anime_storage
+
+# Persistent JSON Database Location
+DB_FILE_PATH=/var/www/stark-anime/data/stark_anime.db.json
 ```
 
 ---
 
-## 3. Running Telegram Bot Mode (Recommended)
-
-Telegram Bot run karne ke liye:
+## 🔄 Step 4: Run Application Services with PM2
 
 ```bash
-python3 main.py bot
-# ya simply
-python3 main.py
-```
+cd /var/www/stark-anime
 
-### 🤖 Telegram Bot Admin Panel Features:
-1. **Interactive Menu Buttons (`/start` or `/menu`)**:
-   - 🎬 **Manage Anime**: View anime list, episodes, add seasons, target anime for video upload, delete anime.
-   - 🎥 **Manage Movies**: View movies, add movies, and delete movies with 1-click buttons.
-   - 📤 **Video Upload Wizard**: Send any video or document file directly to the Telegram bot to instantly upload and stream in the Mini App.
-   - 📊 **System Status**: Check live connection to Neon PostgreSQL & Vercel REST API.
+# 1. Start STARK Web Server (Express + Vite Static Serve)
+pm2 start "bun run server.ts" --name "stark-web"
 
-2. **Direct Video Upload Caption Syntax**:
-   Send any video file to the bot with caption:
-   `Anime: anime_id | Season: 1 | Ep: 1 | Title: Episode Title`
+# 2. Start STARK Telegram Admin Bot & Transcoder Engine
+pm2 start "python3 main.py bot" --name "stark-bot"
 
----
-
-## 4. Other Operating Modes
-
-### Mode A: Interactive Terminal Menu
-
-```bash
-python3 main.py menu
-```
-
-Terminal Menu options:
-1. List All Anime
-2. Create New Anime
-3. Add Season to Anime
-4. Add Episode manually (with File ID / Stream URL)
-5. Upload Video File from VPS to Telegram & Auto-add Episode
-6. List Movies
-7. Add Movie
-8. Delete Anime / Movie / Episode
-9. Test Database & API Connection
-
----
-
-### Mode B: Direct CLI Commands
-
-#### 1. List Anime:
-```bash
-python3 main.py list
-```
-
-#### 2. Create Anime:
-```bash
-python3 main.py add-anime --title "Solo Leveling Season 2" --poster "https://example.com/poster.jpg" --description "Arise!"
-```
-
-#### 3. Upload Local VPS Video File to Telegram & Add Episode:
-```bash
-python3 main.py upload-ep \
-  --anime-id anime_1790672000 \
-  --season 1 \
-  --ep 1 \
-  --file /home/ubuntu/videos/solo_ep1.mp4 \
-  --title "Episode 1: The Awakening"
-```
-
-#### 4. Delete Anime or Movie:
-```bash
-python3 main.py del-anime --id anime_1790672000
-python3 main.py del-movie --id movie_1790672000
-```
-
----
-
-## 5. Run Telegram Bot in Background (PM2 / Systemd)
-
-PM2 se bot ko 24/7 background me chalane ke liye:
-
-```bash
-sudo npm install -g pm2
-pm2 start "python3 main.py bot" --name stark-vps-bot
+# Save PM2 state for automatic startup on reboot
 pm2 save
+pm2 startup
 ```
 
-Enjoy complete remote anime management & direct video uploading from Telegram!
+---
+
+## 🌐 Step 5: Nginx Reverse Proxy Setup
+
+Create file `/etc/nginx/sites-available/stark`:
+
+```nginx
+server {
+    listen 80;
+    server_name your_domain_or_ip;
+
+    client_max_body_size 1000M;
+
+    location / {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_cache_bypass $http_upgrade;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    }
+
+    location /uploads/ {
+        alias /var/www/stark-anime/data/uploads/;
+        add_header Access-Control-Allow-Origin *;
+        add_header Accept-Ranges bytes;
+    }
+}
+```
+
+Enable site:
+```bash
+sudo ln -s /etc/nginx/sites-available/stark /etc/nginx/sites-enabled/
+sudo nginx -t
+sudo systemctl restart nginx
+```
+
+---
+
+## 🎬 How Telegram Video Auto-Transcoding Works
+
+1. Send `/addanime Solo Leveling` to your Telegram Bot.
+2. Upload any video file to the Telegram Bot with caption:
+   `Anime: <anime_id> | Season: 1 | Ep: 1 | Title: Episode Title`
+3. The bot will automatically:
+   - Download the file on VPS.
+   - Use FFmpeg to encode 360p, 480p, 720p, and 1080p MP4 videos with fast streaming headers.
+   - Attach all stream URLs to the episode in `data/stark_anime.db.json`.
+4. Players can immediately switch qualities during video playback!
