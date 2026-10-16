@@ -109,8 +109,28 @@ server {
 
     location /uploads/ {
         alias /var/www/stark-anime/data/uploads/;
-        add_header Access-Control-Allow-Origin *;
+        add_header Access-Control-Allow-Origin * always;
+        add_header Access-Control-Allow-Methods 'GET, OPTIONS' always;
+        add_header Access-Control-Allow-Headers 'Range, Content-Type, Authorization' always;
         add_header Accept-Ranges bytes;
+
+        location ~* \.m3u8$ {
+            add_header Content-Type 'application/x-mpegURL' always;
+            add_header Cache-Control 'no-cache' always;
+            add_header Access-Control-Allow-Origin * always;
+        }
+
+        location ~* \.ts$ {
+            add_header Content-Type 'video/mp2t' always;
+            add_header Cache-Control 'public, max-age=31536000' always;
+            add_header Access-Control-Allow-Origin * always;
+        }
+
+        location ~* \.mp4$ {
+            add_header Content-Type 'video/mp4' always;
+            add_header Cache-Control 'public, max-age=86400' always;
+            add_header Access-Control-Allow-Origin * always;
+        }
     }
 }
 ```
